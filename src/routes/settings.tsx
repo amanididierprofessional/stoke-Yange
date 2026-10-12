@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { db, factoryReset } from "@/lib/db";
 import { useI18n } from "@/lib/i18n";
 import { useShopName } from "@/components/AppShell";
-import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { getAccount, isLoggedIn, signOutLocal } from "@/lib/auth";
 import { trySync } from "@/lib/sync";
 
 export const Route = createFileRoute("/settings")({
@@ -33,21 +33,18 @@ function SettingsPage() {
   const { t, lang, setLang } = useI18n();
   const shop = useShopName();
   const [name, setName] = useState(shop);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [authBusy, setAuthBusy] = useState(false);
+  const [accountLabel, setAccountLabel] = useState<string | null>(null);
   useEffect(() => setName(shop), [shop]);
 
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => {
-      setUserEmail(data.session?.user?.email ?? null);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setUserEmail(session?.user?.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
+    (async () => {
+      if (!(await isLoggedIn())) {
+        setAccountLabel(null);
+        return;
+      }
+      const a = await getAccount();
+      setAccountLabel(a ? `${a.fullName} · ${a.identifier}` : null);
+    })();
   }, []);
 
   const stamp = new Date().toISOString().slice(0, 10);
@@ -66,62 +63,21 @@ function SettingsPage() {
     download(`stoke-yange-sales-${stamp}.csv`, [head, ...body].join("\n"), "text/csv");
   };
 
-  const signInEmail = async () => {
-    if (!supabase) return;
-    setAuthBusy(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) toast.error(error.message);
-      else {
-        toast.success("Signed in");
-        await trySync();
-      }
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const signUpEmail = async () => {
-    if (!supabase) return;
-    setAuthBusy(true);
-    try {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) toast.error(error.message);
-      else toast.success("Check your email to confirm, then sign in");
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const signInGoogle = async () => {
-    if (!supabase) return;
-    setAuthBusy(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: window.location.origin },
-      });
-      if (error) toast.error(error.message);
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const signOut = async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    toast.success("Signed out");
+  const logout = async () => {
+    await signOutLocal();
+    toast.success(t("signedOut"));
+    window.location.reload();
   };
 
   const syncNow = async () => {
     const r = await trySync();
-    if (r.ok) toast.success("Synced to cloud");
+    if (r.ok) toast.success(t("synced"));
     else
       toast.error(
         r.reason === "no_session"
-          ? "Sign in first"
+          ? t("signIn")
           : r.reason === "offline"
-            ? "You are offline"
+            ? t("offline")
             : r.reason ?? "Sync failed",
       );
   };
@@ -138,6 +94,8 @@ function SettingsPage() {
               type="button"
               onClick={async () => {
                 await db.settings.put({ key: "shopName", value: name.trim() || shop });
+                await db.outbox.add({ op: "profile", createdAt: Date.now() });
+                trySync().catch(() => {});
                 toast.success(t("save"));
               }}
               className="rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground"
@@ -165,49 +123,17 @@ function SettingsPage() {
             ))}
           </div>
         </div>
-      </section>
-
-      <section className="space-y-3 rounded-2xl bg-card p-4 shadow-card">
-        <p className="text-sm font-semibold">Cloud backup & login</p>
-        {!supabaseConfigured ? (
+        {accountLabel && (
           <p className="text-xs text-muted-foreground">
-            Add VITE_SUPABASE_ANON_KEY to enable Google / email login and cloud sync. The app already works fully offline without it.
+            {t("signedIn")}: <b className="text-foreground">{accountLabel}</b>
           </p>
-        ) : userEmail ? (
-          <div className="space-y-2">
-            <p className="text-sm">
-              Signed in as <b>{userEmail}</b>
-            </p>
-            <button type="button" onClick={syncNow} className="h-11 w-full rounded-full bg-primary font-semibold text-primary-foreground">
-              Sync now
-            </button>
-            <button type="button" onClick={signOut} className="h-11 w-full rounded-full border font-semibold">
-              Sign out
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <button type="button" disabled={authBusy} onClick={signInGoogle} className="h-11 w-full rounded-full border font-semibold">
-              Continue with Google
-            </button>
-            <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" />
-            <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-11 rounded-xl" />
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" disabled={authBusy} onClick={signInEmail} className="h-11 rounded-full bg-primary font-semibold text-primary-foreground">
-                Sign in
-              </button>
-              <button type="button" disabled={authBusy} onClick={signUpEmail} className="h-11 rounded-full border font-semibold">
-                Sign up
-              </button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              WhatsApp login needs a paid OTP provider — use Google or email for now.
-            </p>
-          </div>
         )}
       </section>
 
       <section className="space-y-2 rounded-2xl bg-card p-4 shadow-card">
+        <button type="button" onClick={syncNow} className="h-12 w-full rounded-full border font-semibold">
+          {t("syncNow")}
+        </button>
         <button type="button" onClick={exportJson} className="h-12 w-full rounded-full border font-semibold">
           {t("exportJson")}
         </button>
@@ -215,25 +141,19 @@ function SettingsPage() {
           {t("exportCsv")}
         </button>
       </section>
+
       <section className="space-y-2 rounded-2xl bg-card p-4 shadow-card">
-        <button
-          type="button"
-          onClick={async () => {
-            if (confirm(t("confirmReset"))) {
-              await factoryReset(true);
-              toast.success(t("reloadDemo"));
-            }
-          }}
-          className="h-12 w-full rounded-full bg-secondary font-semibold text-secondary-foreground"
-        >
-          {t("reloadDemo")}
+        <button type="button" onClick={logout} className="h-12 w-full rounded-full bg-secondary font-semibold text-secondary-foreground">
+          {t("logout")}
         </button>
         <button
           type="button"
           onClick={async () => {
             if (confirm(t("confirmReset"))) {
               await factoryReset(false);
+              await signOutLocal();
               toast.success(t("reset"));
+              window.location.reload();
             }
           }}
           className="h-12 w-full rounded-full bg-destructive font-semibold text-destructive-foreground"
@@ -241,7 +161,18 @@ function SettingsPage() {
           {t("reset")}
         </button>
       </section>
-      <p className="text-center text-xs text-muted-foreground">Stoke Yange · offline-first · data on this phone</p>
+
+      <p className="text-center text-[11px] text-muted-foreground">
+        {t("contactDev")}{" "}
+        <a href="tel:0796919900" className="underline-offset-2 hover:underline">
+          0796919900
+        </a>
+        {" · "}
+        <a href="https://wa.me/250796919900" target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+          WhatsApp
+        </a>
+      </p>
+      <p className="text-center text-xs text-muted-foreground">Stoke Yange · offline-first · real shop data</p>
     </div>
   );
 }
