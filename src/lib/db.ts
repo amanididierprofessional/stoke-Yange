@@ -78,29 +78,49 @@ export const db = new StokeDB();
 export const CATEGORIES = ["Beverages", "Grains & Flour", "Snacks", "Toiletries", "Airtime", "Household"];
 export const UNITS = ["pcs", "kg", "pack", "bottle", "crate", "litre"];
 
-const H = 3600_000;
-const D = 24 * H;
-
-const SEED: Omit<Product, "updatedAt">[] = [
-  { name: "Inyange Milk 500ml", category: "Beverages", unit: "pcs", cost: 400, price: 500, stock: 24, min: 6, emoji: "🥛" },
-  { name: "Primus 72cl", category: "Beverages", unit: "bottle", cost: 900, price: 1100, stock: 18, min: 6, emoji: "🍺" },
-  { name: "Inyange Water 1.5L", category: "Beverages", unit: "bottle", cost: 450, price: 600, stock: 3, min: 5, emoji: "💧" },
-  { name: "Fanta Citron 30cl", category: "Beverages", unit: "bottle", cost: 380, price: 500, stock: 30, min: 8, emoji: "🥤" },
-  { name: "Azam Wheat Flour 2kg", category: "Grains & Flour", unit: "pack", cost: 2400, price: 2800, stock: 10, min: 3, emoji: "🌾" },
-  { name: "Minerval Sugar 1kg", category: "Grains & Flour", unit: "kg", cost: 1300, price: 1500, stock: 2, min: 4, emoji: "🍚" },
-  { name: "Rice (Kigori) 1kg", category: "Grains & Flour", unit: "kg", cost: 1100, price: 1300, stock: 40, min: 10, emoji: "🍙" },
-  { name: "Akabanga Pili Pili", category: "Snacks", unit: "pcs", cost: 700, price: 1000, stock: 15, min: 4, emoji: "🌶️" },
-  { name: "Biscuits Glucose", category: "Snacks", unit: "pack", cost: 150, price: 200, stock: 48, min: 12, emoji: "🍪" },
-  { name: "Colgate 100ml", category: "Toiletries", unit: "pcs", cost: 1000, price: 1300, stock: 8, min: 3, emoji: "🪥" },
-  { name: "Soap Bar (Isabune)", category: "Toiletries", unit: "pcs", cost: 400, price: 500, stock: 20, min: 6, emoji: "🧼" },
-  { name: "MTN Airtime 1000", category: "Airtime", unit: "pcs", cost: 950, price: 1000, stock: 25, min: 5, emoji: "📱" },
-  { name: "Airtel Airtime 500", category: "Airtime", unit: "pcs", cost: 475, price: 500, stock: 12, min: 5, emoji: "📶" },
-  { name: "Cooking Oil 1L", category: "Household", unit: "litre", cost: 2600, price: 3000, stock: 6, min: 2, emoji: "🫒" },
-  { name: "Candles (pack 6)", category: "Household", unit: "pack", cost: 500, price: 700, stock: 1, min: 3, emoji: "🕯️" },
+/** Icons sellers can pick when adding/editing a product (no demo products are loaded). */
+export const PRODUCT_EMOJIS = [
+  "📦", "🥛", "🍺", "🥤", "💧", "🧃", "☕", "🍵",
+  "🌾", "🍚", "🍙", "🍞", "🥚", "🧀", "🫒", "🧂",
+  "🍪", "🍫", "🍬", "🌶️", "🍎", "🍌", "🥕", "🧅",
+  "🧼", "🪥", "🧴", "🧻", "🧽", "🧹",
+  "📱", "📶", "🔋", "💡", "🕯️", "🔦",
+  "🍼", "👗", "👟", "✏️", "📒", "🧸",
 ];
 
+/**
+ * First launch: empty shop (no fake products). Seller adds real items.
+ * Keeps emoji list available for product cards.
+ */
+export async function ensureSeeded() {
+  const s = await db.settings.get("initialized");
+  if (!s) {
+    await db.settings.put({ key: "initialized", value: "1" });
+  }
+}
+
+/** Optional: load sample Rwanda shop data (Settings → Reload demo). */
 export async function seedDemo() {
+  const H = 3600_000;
+  const D = 24 * H;
   const now = Date.now();
+  const SEED: Omit<Product, "updatedAt">[] = [
+    { name: "Inyange Milk 500ml", category: "Beverages", unit: "pcs", cost: 400, price: 500, stock: 24, min: 6, emoji: "🥛" },
+    { name: "Primus 72cl", category: "Beverages", unit: "bottle", cost: 900, price: 1100, stock: 18, min: 6, emoji: "🍺" },
+    { name: "Inyange Water 1.5L", category: "Beverages", unit: "bottle", cost: 450, price: 600, stock: 3, min: 5, emoji: "💧" },
+    { name: "Fanta Citron 30cl", category: "Beverages", unit: "bottle", cost: 380, price: 500, stock: 30, min: 8, emoji: "🥤" },
+    { name: "Azam Wheat Flour 2kg", category: "Grains & Flour", unit: "pack", cost: 2400, price: 2800, stock: 10, min: 3, emoji: "🌾" },
+    { name: "Minerval Sugar 1kg", category: "Grains & Flour", unit: "kg", cost: 1300, price: 1500, stock: 2, min: 4, emoji: "🍚" },
+    { name: "Rice (Kigori) 1kg", category: "Grains & Flour", unit: "kg", cost: 1100, price: 1300, stock: 40, min: 10, emoji: "🍙" },
+    { name: "Akabanga Pili Pili", category: "Snacks", unit: "pcs", cost: 700, price: 1000, stock: 15, min: 4, emoji: "🌶️" },
+    { name: "Biscuits Glucose", category: "Snacks", unit: "pack", cost: 150, price: 200, stock: 48, min: 12, emoji: "🍪" },
+    { name: "Colgate 100ml", category: "Toiletries", unit: "pcs", cost: 1000, price: 1300, stock: 8, min: 3, emoji: "🪥" },
+    { name: "Soap Bar (Isabune)", category: "Toiletries", unit: "pcs", cost: 400, price: 500, stock: 20, min: 6, emoji: "🧼" },
+    { name: "MTN Airtime 1000", category: "Airtime", unit: "pcs", cost: 950, price: 1000, stock: 25, min: 5, emoji: "📱" },
+    { name: "Airtel Airtime 500", category: "Airtime", unit: "pcs", cost: 475, price: 500, stock: 12, min: 5, emoji: "📶" },
+    { name: "Cooking Oil 1L", category: "Household", unit: "litre", cost: 2600, price: 3000, stock: 6, min: 2, emoji: "🫒" },
+    { name: "Candles (pack 6)", category: "Household", unit: "pack", cost: 500, price: 700, stock: 1, min: 3, emoji: "🕯️" },
+  ];
   await db.transaction("rw", [db.products, db.parties, db.debts, db.payments, db.sales, db.movements, db.settings], async () => {
     const ids = await db.products.bulkAdd(SEED.map((p) => ({ ...p, updatedAt: now })), { allKeys: true });
     await db.movements.bulkAdd(
@@ -116,26 +136,21 @@ export async function seedDemo() {
       { partyId: s1, description: "Milk delivery (48 pcs)", amount: 19200, createdAt: now - 6 * D, dueDays: 14 },
     ]);
     await db.payments.add({ partyId: c1, amount: 3000, createdAt: now - 4 * D });
-    const sales: Omit<Sale, "id">[] = [
+    await db.sales.bulkAdd([
       { productId: ids[0]!, productName: SEED[0]!.name, qty: 2, unitPrice: 500, unitCost: 400, total: 1000, type: "cash", createdAt: now - 2 * H },
       { productId: ids[8]!, productName: SEED[8]!.name, qty: 5, unitPrice: 200, unitCost: 150, total: 1000, type: "cash", createdAt: now - 1 * H },
       { productId: ids[11]!, productName: SEED[11]!.name, qty: 1, unitPrice: 1000, unitCost: 950, total: 1000, type: "cash", createdAt: now - D },
-    ];
-    await db.sales.bulkAdd(sales);
-    await db.settings.put({ key: "seeded", value: "1" });
+    ]);
+    await db.settings.put({ key: "initialized", value: "1" });
   });
-}
-
-export async function ensureSeeded() {
-  const s = await db.settings.get("seeded");
-  if (!s) await seedDemo();
 }
 
 export async function factoryReset(withDemo: boolean) {
   await db.transaction("rw", db.tables, async () => {
     for (const t of db.tables) if (t.name !== "settings") await t.clear();
+    await db.settings.delete("initialized");
     await db.settings.delete("seeded");
   });
   if (withDemo) await seedDemo();
-  else await db.settings.put({ key: "seeded", value: "1" });
+  else await db.settings.put({ key: "initialized", value: "1" });
 }
