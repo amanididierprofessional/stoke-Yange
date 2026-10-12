@@ -78,7 +78,7 @@ function SellPage() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {list.map((p) => (
-          <ProductCard key={p.id} product={p} onSell={() => setOpen(p)} />
+          <ProductCard key={p.id} p={p} onOpen={() => setOpen(p)} />
         ))}
       </div>
       {list.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
