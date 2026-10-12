@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { PackagePlus, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { PackagePlus, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,18 @@ export const Route = createFileRoute("/stock")({
   component: StockPage,
 });
 
+const EMOJI_CATEGORY: Record<string, string> = {
+  "🥛": "Beverages", "🍺": "Beverages", "🥤": "Beverages", "💧": "Beverages", "🧃": "Beverages", "☕": "Beverages", "🍵": "Beverages",
+  "🌾": "Grains & Flour", "🍚": "Grains & Flour", "🍙": "Grains & Flour", "🍞": "Grains & Flour",
+  "🥚": "Food", "🧀": "Food", "🫒": "Cooking", "🧂": "Seasonings",
+  "🍪": "Snacks", "🍫": "Snacks", "🍬": "Snacks", "🌶️": "Seasonings",
+  "🍎": "Food", "🍌": "Food", "🥕": "Food", "🧅": "Cooking",
+  "🧼": "Toiletries", "🪥": "Toiletries", "🧴": "Toiletries", "🧻": "Toiletries", "🧽": "Household", "🧹": "Household",
+  "📱": "Airtime", "📶": "Airtime", "🔋": "Household", "💡": "Household", "🕯️": "Household", "🔦": "Household",
+  "🍼": "Daily use", "👗": "Clothes", "👟": "Clothes", "✏️": "School", "📒": "School", "🧸": "School",
+  "📦": "Household",
+};
+
 type Mode = { kind: "edit"; p?: Product } | { kind: "in"; p: Product } | null;
 
 function StockPage() {
@@ -34,13 +46,14 @@ function StockPage() {
   const [cat, setCat] = useState("__all");
   const [q, setQ] = useState("");
   const [mode, setMode] = useState<Mode>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const products = useLiveQuery(() => db.products.orderBy("name").toArray(), []) ?? [];
   const cats = [...new Set([...CATEGORIES, ...products.map((p) => p.category)])];
   const list = products.filter(
     (p) => (cat === "__all" || p.category === cat) && (!low || p.stock <= p.min) && p.name.toLowerCase().includes(q.toLowerCase()),
   );
-  const allCost = products.reduce((a, p) => a + p.stock * p.cost, 0);
-  const allSale = products.reduce((a, p) => a + p.stock * p.price, 0);
+  const allCost = products.reduce((a, p) => a + (Number(p.stock) || 0) * (Number(p.cost) || 0), 0);
+  const allSale = products.reduce((a, p) => a + (Number(p.stock) || 0) * (Number(p.price) || 0), 0);
 
   return (
     <div className="space-y-4">
@@ -74,40 +87,28 @@ function StockPage() {
           const isLow = p.stock <= p.min;
           return (
             <li key={p.id} className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card">
-              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-accent text-2xl">{p.emoji}</span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{p.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  <span className={cn("font-semibold", isLow ? "text-destructive" : "text-foreground")}>
-                    {p.stock} {p.unit}
-                  </span>{" "}· min {p.min} · {fmt(p.price)}
-                </p>
-              </div>
+              <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setMode({ kind: "edit", p })}>
+                <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-accent text-2xl">{p.emoji}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold underline-offset-2 hover:underline">{p.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    <span className={cn("font-semibold", isLow ? "text-destructive" : "text-foreground")}>{p.stock} {p.unit}</span>
+                    {" · min "}{p.min}{" · "}{fmt(p.price)}
+                  </p>
+                </div>
+              </button>
               <div className="flex gap-1">
                 <IconBtn label={t("stockIn")} onClick={() => setMode({ kind: "in", p })}>
                   <PackagePlus className="size-4" />
                 </IconBtn>
-                <IconBtn label={t("edit")} onClick={() => setMode({ kind: "edit", p })}>
-                  <Pencil className="size-4" />
-                </IconBtn>
-                <IconBtn
-                  label={t("deleteProduct")}
-                  onClick={() => {
-                    if (!confirm(t("confirmDelete"))) return;
-                    deleteProduct(p.id!)
-                      .then(() => toast.success(t("deleteProduct")))
-                      .catch((e) => toast.error(e.message));
-                  }}
-                >
+                <IconBtn label={t("deleteProduct")} onClick={() => setDeleteTarget(p)}>
                   <Trash2 className="size-4 text-destructive" />
                 </IconBtn>
               </div>
             </li>
           );
         })}
-        {list.length === 0 && (
-          <p className="py-10 text-center text-sm text-muted-foreground">{t("emptyShop")}</p>
-        )}
+        {list.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{t("emptyShop")}</p>}
       </ul>
 
       <Drawer open={!!mode} onOpenChange={(o) => !o && setMode(null)}>
@@ -116,6 +117,30 @@ function StockPage() {
           {mode?.kind === "in" && <StockInForm p={mode.p} onDone={() => setMode(null)} />}
         </DrawerContent>
       </Drawer>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setDeleteTarget(null)}>
+          <div className="w-full max-w-sm rounded-3xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-base font-bold">{t("confirmDeleteTitle")}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("confirmDeleteBody")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{deleteTarget.emoji} {deleteTarget.name}</p>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setDeleteTarget(null)} className="h-11 flex-1 rounded-full border font-semibold">{t("cancel")}</button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteProduct(deleteTarget.id!)
+                    .then(() => { toast.success(t("deleteProduct")); setDeleteTarget(null); })
+                    .catch((e) => toast.error(e.message));
+                }}
+                className="h-11 flex-1 rounded-full bg-destructive font-semibold text-destructive-foreground"
+              >
+                {t("deleteProduct")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -146,7 +171,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   const existingNames = new Set(existing.map((x) => x.name.toLowerCase()));
   const [f, setF] = useState({
     name: p?.name ?? "",
-    category: p?.category ?? cats[0]!,
+    category: p?.category ?? cats[0] ?? "Food",
     unit: p?.unit ?? "pcs",
     emoji: p?.emoji ?? "📦",
     cost: String(p?.cost ?? ""),
@@ -155,20 +180,13 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     min: String(p?.min ?? "3"),
   });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const pickEmoji = (e: string) => setF({ ...f, emoji: e, category: EMOJI_CATEGORY[e] ?? f.category });
+
   const save = async () => {
-    if (!f.name.trim()) {
-      toast.error(t("name"));
-      return;
-    }
+    if (!f.name.trim()) { toast.error(t("name")); return; }
     const data = {
-      name: f.name.trim(),
-      category: f.category,
-      unit: f.unit,
-      emoji: f.emoji,
-      cost: num(f.cost),
-      price: num(f.price),
-      min: num(f.min),
-      stock: p ? p.stock : num(f.stock),
+      name: f.name.trim(), category: f.category, unit: f.unit, emoji: f.emoji,
+      cost: num(f.cost), price: num(f.price), min: num(f.min), stock: p ? p.stock : num(f.stock),
     };
     await saveProduct(p?.id ? { ...data, id: p.id } : data);
     toast.success(t("save"));
@@ -178,19 +196,9 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   const addDefault = async (d: (typeof DEFAULT_PRODUCTS)[0]) => {
     const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
     if (existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase())) {
-      toast.message(t("alreadyHave"));
-      return;
+      toast.message(t("alreadyHave")); return;
     }
-    await saveProduct({
-      name: label,
-      category: d.category,
-      unit: d.unit,
-      emoji: d.emoji,
-      cost: 0,
-      price: 0,
-      stock: 0,
-      min: 3,
-    });
+    await saveProduct({ name: label, category: d.category, unit: d.unit, emoji: d.emoji, cost: 0, price: 0, stock: 0, min: 3 });
     toast.success(t("addedDefault"));
   };
 
@@ -204,25 +212,23 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     return (
       <div className="overflow-y-auto">
         <DrawerHeader className="flex-row items-center gap-2 space-y-0">
-          <button type="button" onClick={() => setShowDefaults(false)} className="rounded-full border px-3 py-1.5 text-xs font-semibold">
-            ←
-          </button>
+          <button type="button" onClick={() => setShowDefaults(false)} className="rounded-full border px-3 py-1.5 text-xs font-semibold">←</button>
           <DrawerTitle>{t("defaultsTitle")}</DrawerTitle>
         </DrawerHeader>
         <p className="px-4 text-xs text-muted-foreground">{t("defaultsHint")}</p>
         <div className="space-y-4 px-4 pb-6 pt-2">
-          {[...byCat.entries()].map(([cat, items]) => (
-            <div key={cat}>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{cat}</p>
+          {[...byCat.entries()].map(([c, items]) => (
+            <div key={c}>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{c}</p>
               <ul className="space-y-1.5">
                 {items.map((d) => {
                   const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
                   const have = existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase());
                   return (
-                    <li key={d.name} className="flex items-center gap-2 rounded-xl border bg-card px-2 py-2">
-                      <span className="grid size-10 place-items-center rounded-lg bg-accent text-xl">{d.emoji}</span>
+                    <li key={d.name} className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2">
+                      <span className="text-xl">{d.emoji}</span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{label}</p>
+                        <p className="truncate text-sm font-medium">{label}</p>
                         <p className="text-[10px] text-muted-foreground">{d.unit}</p>
                       </div>
                       <button type="button" disabled={have} onClick={() => addDefault(d)} className="h-9 shrink-0 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">
@@ -243,9 +249,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     <div className="overflow-y-auto">
       <DrawerHeader className="flex-row items-center justify-between space-y-0 gap-2">
         {!p && (
-          <button type="button" onClick={() => setShowDefaults(true)} className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary">
-            {t("defaults")}
-          </button>
+          <button type="button" onClick={() => setShowDefaults(true)} className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary">{t("defaults")}</button>
         )}
         <DrawerTitle className="flex-1 text-center">{p ? t("edit") : t("addProduct")}</DrawerTitle>
         {!p && <span className="w-16" />}
@@ -253,40 +257,26 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
       <div className="space-y-3 px-4 pb-6">
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
           {PRODUCT_EMOJIS.map((e) => (
-            <button key={e} type="button" onClick={() => setF({ ...f, emoji: e })} className={cn("grid size-11 shrink-0 place-items-center rounded-xl text-2xl", f.emoji === e ? "bg-primary/20 ring-2 ring-primary" : "bg-muted")}>
+            <button key={e} type="button" onClick={() => pickEmoji(e)} className={cn("grid size-11 shrink-0 place-items-center rounded-xl text-2xl", f.emoji === e ? "bg-primary/20 ring-2 ring-primary" : "bg-muted")}>
               {e}
             </button>
           ))}
         </div>
-        <Field label={t("name")}>
-          <Input value={f.name} onChange={set("name")} className="h-11 rounded-xl" />
-        </Field>
+        <Field label={t("name")}><Input value={f.name} onChange={set("name")} className="h-11 rounded-xl" /></Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label={t("category")}>
             <input list="cats" value={f.category} onChange={set("category")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm" />
-            <datalist id="cats">{cats.map((c) => (<option key={c} value={c} />))}</datalist>
+            <datalist id="cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
           </Field>
           <Field label={t("unit")}>
-            <select value={f.unit} onChange={set("unit")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">{UNITS.map((u) => (<option key={u}>{u}</option>))}</select>
+            <select value={f.unit} onChange={set("unit")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">{UNITS.map((u) => <option key={u}>{u}</option>)}</select>
           </Field>
-          <Field label={t("cost")}>
-            <Input inputMode="numeric" value={f.cost} onChange={set("cost")} className="h-11 rounded-xl" />
-          </Field>
-          <Field label={t("sellPrice")}>
-            <Input inputMode="numeric" value={f.price} onChange={set("price")} className="h-11 rounded-xl" />
-          </Field>
-          {!p && (
-            <Field label={t("openingStock")}>
-              <Input inputMode="numeric" value={f.stock} onChange={set("stock")} className="h-11 rounded-xl" />
-            </Field>
-          )}
-          <Field label={t("minAlert")}>
-            <Input inputMode="numeric" value={f.min} onChange={set("min")} className="h-11 rounded-xl" />
-          </Field>
+          <Field label={t("cost")}><Input inputMode="numeric" value={f.cost} onChange={set("cost")} className="h-11 rounded-xl" /></Field>
+          <Field label={t("sellPrice")}><Input inputMode="numeric" value={f.price} onChange={set("price")} className="h-11 rounded-xl" /></Field>
+          {!p && <Field label={t("openingStock")}><Input inputMode="numeric" value={f.stock} onChange={set("stock")} className="h-11 rounded-xl" /></Field>}
+          <Field label={t("minAlert")}><Input inputMode="numeric" value={f.min} onChange={set("min")} className="h-11 rounded-xl" /></Field>
         </div>
-        <button type="button" onClick={save} className="h-13 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
-          {t("save")}
-        </button>
+        <button type="button" onClick={save} className="h-13 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
       </div>
     </div>
   );
@@ -296,11 +286,12 @@ function StockInForm({ p, onDone }: { p: Product; onDone: () => void }) {
   const { t } = useI18n();
   const [qty, setQty] = useState("");
   const [cost, setCost] = useState(String(p.cost));
+  const [price, setPrice] = useState(String(p.price));
   const [sup, setSup] = useState<number | "">("");
   const suppliers = useLiveQuery(() => db.parties.where("kind").equals("supplier").toArray(), []) ?? [];
   const save = async () => {
     try {
-      await stockIn(p.id!, num(qty), num(cost), sup === "" ? undefined : sup);
+      await stockIn(p.id!, num(qty), num(cost), sup === "" ? undefined : sup, num(price));
       toast.success(`+${num(qty)} ${p.name}`);
       onDone();
     } catch {
@@ -309,40 +300,22 @@ function StockInForm({ p, onDone }: { p: Product; onDone: () => void }) {
   };
   return (
     <div className="overflow-y-auto">
-      <DrawerHeader>
-        <DrawerTitle>
-          {t("stockIn")}: {p.emoji} {p.name}
-        </DrawerTitle>
-      </DrawerHeader>
+      <DrawerHeader><DrawerTitle>{t("stockIn")}: {p.emoji} {p.name}</DrawerTitle></DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
         <div className="grid grid-cols-2 gap-2">
-          <Field label={t("quantity")}>
-            <Input autoFocus inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="h-12 rounded-xl text-lg" />
-          </Field>
-          <Field label={t("cost")}>
-            <Input inputMode="numeric" value={cost} onChange={(e) => setCost(e.target.value)} className="h-12 rounded-xl text-lg" />
-          </Field>
+          <Field label={t("quantity")}><Input autoFocus inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="h-12 rounded-xl text-lg" /></Field>
+          <Field label={t("cost")}><Input inputMode="numeric" value={cost} onChange={(e) => setCost(e.target.value)} className="h-12 rounded-xl text-lg" /></Field>
         </div>
+        <Field label={t("sellPrice")}><Input inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} className="h-12 rounded-xl text-lg" /></Field>
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">{t("fromSupplier")}</p>
-          <div className="max-h-36 space-y-1 overflow-y-auto rounded-xl border bg-card p-2">
-            <button type="button" onClick={() => setSup("")} className={cn("flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm", sup === "" ? "bg-primary/15 font-semibold text-primary" : "hover:bg-muted")}>
-              {t("none")}
-            </button>
-            {suppliers.map((s) => (
-              <button key={s.id} type="button" onClick={() => setSup(s.id!)} className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm", sup === s.id ? "bg-primary/15 font-semibold text-primary" : "hover:bg-muted")}>
-                <span className="grid size-8 place-items-center rounded-full bg-accent text-xs font-bold">{s.name[0]}</span>
-                {s.name}
-              </button>
-            ))}
-          </div>
+          <button type="button" onClick={() => setSup("")} className={cn("w-full rounded-xl border px-3 py-2.5 text-left text-sm", sup === "" && "border-primary bg-primary/10")}>{t("none")}</button>
+          {suppliers.map((s) => (
+            <button key={s.id} type="button" onClick={() => setSup(s.id!)} className={cn("w-full rounded-xl border px-3 py-2.5 text-left text-sm", sup === s.id && "border-primary bg-primary/10")}>{s.name}</button>
+          ))}
         </div>
-        <p className="text-sm text-muted-foreground">
-          {t("total")}: <b className="text-foreground">{fmt(num(qty) * num(cost))}</b>
-        </p>
-        <button type="button" onClick={save} className="w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
-          {t("save")}
-        </button>
+        <p className="text-sm font-semibold">{t("total")}: {fmt(num(qty) * num(cost))}</p>
+        <button type="button" onClick={save} className="h-13 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
       </div>
     </div>
   );
