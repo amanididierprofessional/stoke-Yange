@@ -24,19 +24,14 @@ function HistoryPage() {
   const { t } = useI18n();
   const sales = useLiveQuery(() => db.sales.orderBy("createdAt").reverse().limit(500).toArray(), []) ?? [];
   const parties = useLiveQuery(() => db.parties.toArray(), []) ?? [];
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<number[]>([]);
 
   const toggle = (id: number) => {
-    setSelected((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
-  const clearSel = () => setSelected(new Set());
+  const clearSel = () => setSelected([]);
 
-  const selectedSales = sales.filter((s) => s.id != null && selected.has(s.id) && !s.reversed);
+  const selectedSales = sales.filter((s) => s.id != null && selected.includes(s.id) && !s.reversed);
   const selectedTotal = selectedSales.reduce((a, s) => a + s.total, 0);
 
   const groups = new Map<string, Sale[]>();
@@ -50,13 +45,22 @@ function HistoryPage() {
     <div className="space-y-5">
       <h2 className="text-2xl font-bold">{t("history")}</h2>
 
-      {selected.size > 0 && (
+      {selected.length > 0 && (
         <section className="relative rounded-3xl bg-hero p-5 text-primary-foreground shadow-card">
-          <button type="button" onClick={clearSel} className="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/20" aria-label="Close">
-            <X className="size-3.5" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              clearSel();
+            }}
+            className="absolute right-3 top-3 z-20 grid size-9 place-items-center rounded-full bg-black/30 ring-1 ring-white/50"
+            aria-label="Close"
+          >
+            <X className="size-4" />
           </button>
           <p className="text-xs font-medium opacity-90">{t("selectedTotal")}</p>
-          <p className="text-3xl font-bold tabular-nums tracking-tight">{fmt(selectedTotal)}</p>
+          <p className="pr-10 text-3xl font-bold tabular-nums tracking-tight">{fmt(selectedTotal)}</p>
           <p className="mt-1 text-xs opacity-90">
             {selectedSales.length} {t("itemsSelected")}
           </p>
@@ -85,7 +89,7 @@ function HistoryPage() {
             <ul className="space-y-2">
               {list.map((s) => {
                 const canUndo = !s.reversed && Date.now() - s.createdAt < UNDO_WINDOW_MS;
-                const isSel = s.id != null && selected.has(s.id);
+                const isSel = s.id != null && selected.includes(s.id);
                 return (
                   <li
                     key={s.id}
