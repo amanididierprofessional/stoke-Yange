@@ -1,9 +1,9 @@
 /**
  * Local-first shop accounts (phone or email + password).
- * Optionally mirrors to Supabase Auth when configured.
- * Recovery uses name + business + age (owner-set verification).
+ * Mirrors to Supabase Auth when configured.
+ * Recovery uses name + business + age.
  */
-import { db } from "./db";
+import { db, factoryReset } from "./db";
 import { supabase, supabaseConfigured } from "./supabase";
 import { trySync } from "./sync";
 
@@ -200,6 +200,7 @@ export async function recoverPassword(opts: {
   return { ok: true };
 }
 
+/** Log out: clear session + local account + all shop data on this phone. Cloud data stays. */
 export async function signOutLocal() {
   setLoggedIn(false);
   if (supabase) {
@@ -208,5 +209,31 @@ export async function signOutLocal() {
     } catch {
       /* */
     }
+  }
+  // Wipe local shop + account so next user starts clean on this device
+  await factoryReset(false);
+  await db.settings.delete(KEY);
+  await db.settings.delete("shopName");
+}
+
+/** Delete all cloud rows for the current Supabase user (best-effort). */
+export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }> {
+  if (!supabaseConfigured || !supabase) return { ok: false, reason: "not_configured" };
+  if (!navigator.onLine) return { ok: false, reason: "offline" };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id;
+    if (!uid) return { ok: false, reason: "no_session" };
+    const tables = ["movements", "payments", "debts", "sales", "parties", "products", "profiles"] as const;
+    for (const table of tables) {
+      if (table === "profiles") {
+        await supabase.from(table).delete().eq("id", uid);
+      } else {
+        await supabase.from(table).delete().eq("user_id", uid);
+      }
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String(e) };
   }
 }
