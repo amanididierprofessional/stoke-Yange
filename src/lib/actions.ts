@@ -1,7 +1,7 @@
 import { db, type Product, type SaleType, type PartyKind } from "./db";
 import { trySync } from "./sync";
 
-export const UNDO_WINDOW_MS = 10 * 60 * 1000;
+export const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
 
 const queue = async (op: string) => {
   await db.outbox.add({ op, createdAt: Date.now() });
@@ -77,33 +77,44 @@ export async function deleteProduct(productId: number) {
   });
 }
 
-export async function stockIn(productId: number, qty: number, unitCost: number, supplierId?: number) {
+export async function stockIn(
+  productId: number,
+  qty: number,
+  unitCost: number,
+  supplierId?: number,
+  sellPrice?: number,
+) {
   const now = Date.now();
   await db.transaction("rw", [db.products, db.movements, db.debts, db.outbox], async () => {
     const p = await db.products.get(productId);
     if (!p || qty <= 0) throw new Error("Invalid");
     const newStock = p.stock + qty;
-    const newCost = newStock > 0 ? (p.stock * p.cost + qty * unitCost) / newStock : unitCost;
-    await db.products.update(productId, { stock: newStock, cost: newCost, updatedAt: now });
+    const avg = Math.round((p.stock * p.cost + qty * unitCost) / newStock);
+    const patch: Record<string, number> = { stock: newStock, cost: avg, updatedAt: now };
+    if (sellPrice != null && Number.isFinite(sellPrice) && sellPrice >= 0) {
+      patch.price = sellPrice;
+    }
+    await db.products.update(productId, patch);
     await db.movements.add({ productId, type: "in", qty, unitCost, createdAt: now });
-    if (supplierId) {
+    if (supplierId)
       await db.debts.add({
         partyId: supplierId,
-        description: `Stock in ${qty} × ${p.name}`,
+        description: `${qty} × ${p.name}`,
         amount: qty * unitCost,
         createdAt: now,
+        dueDays: 14,
       });
-    }
     await queue("stockIn");
   });
 }
 
-export async function adjustStock(productId: number, counted: number) {
+export async function adjustCount(productId: number, counted: number) {
   const now = Date.now();
   await db.transaction("rw", [db.products, db.movements, db.outbox], async () => {
     const p = await db.products.get(productId);
-    if (!p) throw new Error("Not found");
+    if (!p || counted < 0) throw new Error("Invalid");
     const diff = counted - p.stock;
+    if (diff === 0) return;
     await db.products.update(productId, { stock: counted, updatedAt: now });
     await db.movements.add({ productId, type: "adjust", qty: diff, createdAt: now });
     await queue("adjust");
@@ -117,7 +128,7 @@ export async function addParty(name: string, phone: string, kind: PartyKind) {
 }
 
 export async function addDebt(partyId: number, description: string, amount: number) {
-  await db.debts.add({ partyId, description, amount, createdAt: Date.now() });
+  await db.debts.add({ partyId, description, amount, createdAt: Date.now(), dueDays: 14 });
   await queue("debt");
 }
 

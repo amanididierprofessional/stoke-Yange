@@ -31,7 +31,6 @@ function SellPage() {
   const today = useLiveQuery(() => db.sales.where("createdAt").aboveOrEqual(startOfDay()).filter((s) => !s.reversed).toArray(), []) ?? [];
 
   const costValue = products.reduce((a, p) => a + p.stock * p.cost, 0);
-  const saleValue = products.reduce((a, p) => a + p.stock * p.price, 0);
   const cash = today.filter((s) => s.type === "cash").reduce((a, s) => a + s.total, 0);
   const credit = today.filter((s) => s.type === "credit").reduce((a, s) => a + s.total, 0);
   const low = products.filter((p) => p.stock <= p.min);
@@ -40,13 +39,9 @@ function SellPage() {
 
   return (
     <div className="space-y-4">
-      {/* Hero: Today's cash primary, inventory secondary */}
       <section className="rounded-3xl bg-hero p-5 text-primary-foreground shadow-card">
         <p className="text-xs font-medium opacity-90">{t("todayCash")}</p>
         <p className="text-3xl font-bold tabular-nums tracking-tight">{fmt(cash)}</p>
-        <p className="mt-1 text-xs opacity-90">
-          {t("salesValue")}: <b>{fmt(saleValue)}</b>
-        </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <div className="rounded-2xl bg-primary-foreground/15 p-3">
             <p className="text-[11px] opacity-90">{t("stockValue")}</p>
@@ -78,17 +73,16 @@ function SellPage() {
           className="h-12 w-full rounded-full border bg-card pl-11 pr-4 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
+
       <CategoryPills value={cat} onChange={setCat} categories={cats} />
 
-      {list.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">{t("noItems")}</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-3">
-          {list.map((p) => (
-            <ProductCard key={p.id} p={p} onOpen={() => setOpen(p)} />
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {list.map((p) => (
+          <ProductCard key={p.id} product={p} onSell={() => setOpen(p)} />
+        ))}
+      </div>
+      {list.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
+
       <SellSheet product={open} onClose={() => setOpen(null)} />
     </div>
   );
