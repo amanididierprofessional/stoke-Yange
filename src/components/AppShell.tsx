@@ -1,9 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Bell, BookUser, History, Package, Settings, ShoppingBag, Wifi, WifiOff } from "lucide-react";
 import { db, ensureSeeded } from "@/lib/db";
 import { trySync } from "@/lib/sync";
+import { isLoggedIn } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { AuthWelcome } from "@/components/AuthWelcome";
@@ -16,24 +17,41 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
   const [online, setOnline] = useState(true);
   const [ready, setReady] = useState(false);
+  const [bootPct, setBootPct] = useState(0);
+  const [bootLabel, setBootLabel] = useState("…");
+  const [authed, setAuthed] = useState(false);
   const shop = useShopName();
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
+  const onAuthed = useCallback(() => setAuthed(true), []);
+
   useEffect(() => {
     let cancelled = false;
-    ensureSeeded()
-      .catch(console.error)
-      .finally(() => {
-        if (!cancelled) setReady(true);
-      });
+    (async () => {
+      const stages: { pct: number; label: string; run: () => Promise<void> }[] = [
+        { pct: 15, label: "DB", run: async () => { await ensureSeeded(); } },
+        { pct: 40, label: "Stock", run: async () => { await db.products.count(); await db.sales.count(); } },
+        { pct: 65, label: "Auth", run: async () => { const ok = await isLoggedIn(); if (!cancelled) setAuthed(ok); } },
+        { pct: 90, label: "Sync", run: async () => { if (navigator.onLine) await trySync().catch(() => {}); } },
+        { pct: 100, label: "OK", run: async () => {} },
+      ];
+      for (const s of stages) {
+        if (cancelled) return;
+        setBootPct(s.pct);
+        setBootLabel(s.label);
+        await s.run();
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      if (!cancelled) setReady(true);
+    })().catch(console.error);
+
     setOnline(navigator.onLine);
     const on = () => { setOnline(true); trySync().catch(() => {}); };
     const off = () => setOnline(false);
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
-    if (navigator.onLine) trySync().catch(() => {});
     return () => {
       cancelled = true;
       window.removeEventListener("online", on);
@@ -48,6 +66,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     { to: "/history" as const, label: t("history"), icon: History },
   ];
 
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
+        <div className="mb-6 grid size-16 place-items-center rounded-3xl bg-hero text-3xl text-primary-foreground shadow-card">🏪</div>
+        <p className="mb-3 text-sm font-semibold text-foreground">Stoke Yange</p>
+        <div className="h-2.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary transition-all duration-300 ease-out" style={{ width: `${bootPct}%` }} />
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">{bootPct}% · {bootLabel}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto min-h-screen max-w-md bg-background pb-32">
       <header className="sticky top-0 z-30 bg-background/90 px-3 pb-3 pt-3 backdrop-blur sm:px-4 sm:pt-4">
@@ -61,24 +92,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => setLang(lang === "en" ? "rw" : "en")}
-              className="flex h-9 items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm"
-              aria-label="Toggle language"
-            >
-              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
-                EN
-              </span>
-              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
-                RW
-              </span>
+            <button type="button" onClick={() => setLang(lang === "en" ? "rw" : "en")} className="flex h-9 items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm" aria-label="Toggle language">
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>EN</span>
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>RW</span>
             </button>
             <Link to="/stock" search={{ low: true }} className="relative grid size-9 place-items-center rounded-full border bg-card" aria-label="Low stock">
               <Bell className="size-4" />
-              {lowCount > 0 && (
-                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{lowCount}</span>
-              )}
+              {lowCount > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{lowCount}</span>}
             </Link>
             <Link to="/settings" className="grid size-9 place-items-center rounded-full border bg-card" aria-label={t("settings")}>
               <Settings className="size-4" />
@@ -86,8 +106,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="px-4">{ready ? children : <BootSkeleton />}</main>
-      <AuthWelcome />
+      <main className="px-4">{children}</main>
+      {!authed && <AuthWelcome onAuthed={onAuthed} />}
       <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[calc(100%-2rem)] max-w-sm items-center justify-between gap-1 rounded-full bg-ink p-1.5 shadow-card">
         {tabs.map(({ to, label, icon: Icon }) => {
           const active = to === "/" ? path === "/" : path.startsWith(to);
@@ -99,20 +119,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           );
         })}
       </nav>
-    </div>
-  );
-}
-
-function BootSkeleton() {
-  return (
-    <div className="space-y-4 animate-pulse">
-      <div className="h-36 rounded-3xl bg-primary/20" />
-      <div className="h-12 rounded-full bg-muted" />
-      <div className="grid grid-cols-2 gap-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-40 rounded-2xl bg-muted" />
-        ))}
-      </div>
     </div>
   );
 }
