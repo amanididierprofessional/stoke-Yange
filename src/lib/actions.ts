@@ -63,6 +63,16 @@ export async function saveProduct(p: Omit<Product, "updatedAt">) {
   await queue("product");
 }
 
+/** Remove a product type from the catalogue (keeps past sales history). */
+export async function deleteProduct(productId: number) {
+  await db.transaction("rw", [db.products, db.movements, db.outbox], async () => {
+    const p = await db.products.get(productId);
+    if (!p) throw new Error("Product not found");
+    await db.products.delete(productId);
+    await queue("productDelete");
+  });
+}
+
 export async function stockIn(productId: number, qty: number, unitCost: number, supplierId?: number) {
   const now = Date.now();
   await db.transaction("rw", [db.products, db.movements, db.debts, db.outbox], async () => {
