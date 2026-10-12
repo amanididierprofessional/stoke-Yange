@@ -3,8 +3,8 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
   getAccount,
-  hasAccount,
   isLoggedIn,
+  MIN_PASSWORD,
   recoverPassword,
   signIn,
   signUp,
@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 type Mode = "login" | "signup" | "recover";
 type Step = 1 | 2;
 
-/** Required 2-step auth. Default = login. Visible Sign in / Sign up toggle. */
 export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -43,7 +42,6 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         onAuthed?.();
         return;
       }
-      // Always start on login; user can switch to sign up
       setMode("login");
       setOpen(true);
     })();
@@ -57,7 +55,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       setShowConfirm(false);
       return;
     }
-    if (password.length >= 4) {
+    if (password.length >= MIN_PASSWORD) {
       const tmr = setTimeout(() => setShowConfirm(true), 400);
       return () => clearTimeout(tmr);
     }
@@ -99,8 +97,8 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       toast.error(tab === "phone" ? t("phone") : t("email"));
       return;
     }
-    if (password.length < 4) {
-      toast.error(t("password"));
+    if (password.length < MIN_PASSWORD) {
+      toast.error(t("passwordMin"));
       return;
     }
     if (mode === "login") {
@@ -115,7 +113,6 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         }
         if (res.error === "bad_password") {
           toast.error(t("badLogin"));
-          // Suggest recovery
           toast.message(t("forgotPassword"));
           return;
         }
@@ -141,6 +138,10 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   const submitProfile = async () => {
+    if (!fullName.trim() || !business.trim()) {
+      toast.error(t("profileRequired"));
+      return;
+    }
     setBusy(true);
     try {
       const res = await signUp({
@@ -157,7 +158,17 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           goLogin();
           return;
         }
-        toast.error(t("badLogin"));
+        if (res.error === "password_short") {
+          toast.error(t("passwordMin"));
+          setStep(1);
+          return;
+        }
+        if (res.error === "profile") {
+          toast.error(t("profileRequired"));
+          return;
+        }
+        // Never show "Wrong phone/email or password" on signup
+        toast.error(t("signupFailed"));
         return;
       }
       setWelcome(true);
@@ -171,8 +182,8 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   const submitRecover = async () => {
-    if (password.length < 4) {
-      toast.error(t("password"));
+    if (password.length < MIN_PASSWORD) {
+      toast.error(t("passwordMin"));
       return;
     }
     setBusy(true);
@@ -199,7 +210,6 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center">
       <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-background shadow-2xl">
-        {/* Progress */}
         <div className="flex gap-2 px-5 pt-5">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: step >= 1 ? "100%" : "0%" }} />
@@ -223,7 +233,6 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             </p>
           </div>
 
-          {/* Visible Sign in | Sign up toggle (not only a bottom link) */}
           {mode !== "recover" && (
             <div className="mb-4 grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
               <button
@@ -276,7 +285,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
               />
               <Input
                 type="password"
-                placeholder={t("password")}
+                placeholder={`${t("password")} (min ${MIN_PASSWORD})`}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="h-12 rounded-xl"
