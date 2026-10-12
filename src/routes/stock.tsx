@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { db, CATEGORIES, PRODUCT_EMOJIS, UNITS, type Product } from "@/lib/db";
+import { DEFAULT_PRODUCTS } from "@/lib/defaults";
 import { deleteProduct, fmt, saveProduct, stockIn } from "@/lib/actions";
 import { useI18n } from "@/lib/i18n";
 import { CategoryPills } from "@/components/AppShell";
@@ -139,7 +140,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const num = (v: string) => Number(v.replace(/[^\d.]/g, "")) || 0;
 
 function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: string[]; onDone: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const [showDefaults, setShowDefaults] = useState(false);
+  const existing = useLiveQuery(() => db.products.toArray(), []) ?? [];
+  const existingNames = new Set(existing.map((x) => x.name.toLowerCase()));
   const [f, setF] = useState({
     name: p?.name ?? "",
     category: p?.category ?? cats[0]!,
@@ -170,10 +174,81 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     toast.success(t("save"));
     onDone();
   };
+
+  const addDefault = async (d: (typeof DEFAULT_PRODUCTS)[0]) => {
+    const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
+    if (existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase())) {
+      toast.message(t("alreadyHave"));
+      return;
+    }
+    await saveProduct({
+      name: label,
+      category: d.category,
+      unit: d.unit,
+      emoji: d.emoji,
+      cost: 0,
+      price: 0,
+      stock: 0,
+      min: 3,
+    });
+    toast.success(t("addedDefault"));
+  };
+
+  if (showDefaults && !p) {
+    const byCat = new Map<string, typeof DEFAULT_PRODUCTS>();
+    for (const d of DEFAULT_PRODUCTS) {
+      const list = byCat.get(d.category) ?? [];
+      list.push(d);
+      byCat.set(d.category, list);
+    }
+    return (
+      <div className="overflow-y-auto">
+        <DrawerHeader className="flex-row items-center gap-2 space-y-0">
+          <button type="button" onClick={() => setShowDefaults(false)} className="rounded-full border px-3 py-1.5 text-xs font-semibold">
+            ←
+          </button>
+          <DrawerTitle>{t("defaultsTitle")}</DrawerTitle>
+        </DrawerHeader>
+        <p className="px-4 text-xs text-muted-foreground">{t("defaultsHint")}</p>
+        <div className="space-y-4 px-4 pb-6 pt-2">
+          {[...byCat.entries()].map(([cat, items]) => (
+            <div key={cat}>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{cat}</p>
+              <ul className="space-y-1.5">
+                {items.map((d) => {
+                  const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
+                  const have = existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase());
+                  return (
+                    <li key={d.name} className="flex items-center gap-2 rounded-xl border bg-card px-2 py-2">
+                      <span className="grid size-10 place-items-center rounded-lg bg-accent text-xl">{d.emoji}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{label}</p>
+                        <p className="text-[10px] text-muted-foreground">{d.unit}</p>
+                      </div>
+                      <button type="button" disabled={have} onClick={() => addDefault(d)} className="h-9 shrink-0 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">
+                        {have ? t("alreadyHave") : t("addDefault")}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-y-auto">
-      <DrawerHeader>
-        <DrawerTitle>{p ? t("edit") : t("addProduct")}</DrawerTitle>
+      <DrawerHeader className="flex-row items-center justify-between space-y-0 gap-2">
+        {!p && (
+          <button type="button" onClick={() => setShowDefaults(true)} className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary">
+            {t("defaults")}
+          </button>
+        )}
+        <DrawerTitle className="flex-1 text-center">{p ? t("edit") : t("addProduct")}</DrawerTitle>
+        {!p && <span className="w-16" />}
       </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
