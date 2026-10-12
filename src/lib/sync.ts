@@ -9,16 +9,48 @@ export async function trySync(): Promise<{ ok: boolean; reason?: string }> {
   if (!supabaseConfigured || !supabase) return { ok: false, reason: "not_configured" };
   if (!navigator.onLine) return { ok: false, reason: "offline" };
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  let session;
+  try {
+    const res = await supabase.auth.getSession();
+    session = res.data?.session;
+  } catch (e) {
+    return { ok: false, reason: "auth_error" };
+  }
   if (!session?.user) return { ok: false, reason: "no_session" };
 
   const userId = session.user.id;
+
+  // Profile (name / business)
+  try {
+    const accRow = await db.settings.get("account");
+    const shop = (await db.settings.get("shopName"))?.value ?? "Iduka Ryanjye";
+    let full_name = "";
+    let age = "";
+    let phone = "";
+    if (accRow?.value) {
+      try {
+        const a = JSON.parse(accRow.value);
+        full_name = a.fullName ?? "";
+        age = a.age ?? "";
+        phone = a.loginType === "phone" ? a.identifier : "";
+      } catch { /* */ }
+    }
+    await supabase.from("profiles").upsert({
+      id: userId,
+      shop_name: shop,
+      full_name,
+      age,
+      phone,
+      email: session.user.email ?? null,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn("[sync] profile", e);
+  }
+
   const pending = await db.outbox.orderBy("createdAt").toArray();
   if (pending.length === 0) return { ok: true };
 
-  // Full snapshot push (simple + reliable for small shops)
   const [products, parties, sales, debts, payments, movements] = await Promise.all([
     db.products.toArray(),
     db.parties.toArray(),
@@ -119,7 +151,7 @@ export async function trySync(): Promise<{ ok: boolean; reason?: string }> {
   );
   if (me) return { ok: false, reason: me.message };
 
-  // Clear outbox after successful full push
-  await db.outbox.clear();
+  const ids = pending.map((p) => p.id!).filter(Boolean);
+  if (ids.length) await db.outbox.bulkDelete(ids);
   return { ok: true };
 }
