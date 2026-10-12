@@ -16,7 +16,6 @@ export async function recordSale(opts: {
   unitPrice: number;
   type: SaleType;
   partyId?: number | undefined;
-  dueDays?: number | undefined;
 }) {
   const now = Date.now();
   return db.transaction("rw", [db.products, db.sales, db.movements, db.debts, db.outbox], async () => {
@@ -32,7 +31,7 @@ export async function recordSale(opts: {
     await db.movements.add({ productId: p.id!, type: "sale", qty: -opts.qty, createdAt: now });
     if (opts.type === "credit") {
       if (!opts.partyId) throw new Error("Customer required");
-      await db.debts.add({ partyId: opts.partyId, description: `${opts.qty} × ${p.name}`, amount: total, createdAt: now, saleId, dueDays: opts.dueDays ?? 7 });
+      await db.debts.add({ partyId: opts.partyId, description: `${opts.qty} × ${p.name}`, amount: total, createdAt: now, saleId });
     }
     await queue("sale");
     return saleId;
@@ -69,7 +68,6 @@ export async function stockIn(productId: number, qty: number, unitCost: number, 
   await db.transaction("rw", [db.products, db.movements, db.debts, db.outbox], async () => {
     const p = await db.products.get(productId);
     if (!p || qty <= 0) throw new Error("Invalid");
-    // weighted average cost
     const newStock = p.stock + qty;
     const avg = Math.round((p.stock * p.cost + qty * unitCost) / newStock);
     await db.products.update(productId, { stock: newStock, cost: avg, updatedAt: now });
