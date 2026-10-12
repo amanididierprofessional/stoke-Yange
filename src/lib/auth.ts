@@ -1,7 +1,7 @@
 /**
  * Local-first shop accounts (phone or email + password).
  * Optionally mirrors to Supabase Auth when configured.
- * Recovery uses name + business + age.
+ * Recovery uses name + business + age (owner-set verification).
  */
 import { db } from "./db";
 import { supabase, supabaseConfigured } from "./supabase";
@@ -116,6 +116,23 @@ export async function signUp(opts: {
         console.warn("[auth] supabase signup", error.message);
       }
       await supabase.auth.signInWithPassword({ email, password: opts.password }).catch(() => {});
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const uid = sess.session?.user?.id;
+        if (uid) {
+          await supabase.from("profiles").upsert({
+            id: uid,
+            shop_name: account.businessName,
+            full_name: account.fullName,
+            phone: opts.loginType === "phone" ? id : "",
+            age: account.age,
+            email: opts.loginType === "email" ? id : email,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.warn("[auth] profile upsert", e);
+      }
       trySync().catch(() => {});
     } catch (e) {
       console.warn("[auth] cloud signup skipped", e);
