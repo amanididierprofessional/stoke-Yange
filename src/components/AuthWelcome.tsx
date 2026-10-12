@@ -1,124 +1,243 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { supabase, supabaseConfigured } from "@/lib/supabase";
-import { trySync } from "@/lib/sync";
+import {
+  getAccount,
+  hasAccount,
+  isLoggedIn,
+  recoverPassword,
+  signIn,
+  signUp,
+} from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
-const SKIP_KEY = "sy-auth-skipped";
+type Mode = "login" | "signup" | "recover";
+type Step = 1 | 2;
 
-/** Optional first-open sign-in card with Skip — never blocks offline use. */
-export function AuthWelcome() {
+/** Required 2-step auth (no skip). Phone|Email + password, then profile / recovery. */
+export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState<Mode>("signup");
+  const [step, setStep] = useState<Step>(1);
+  const [tab, setTab] = useState<"phone" | "email">("phone");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [business, setBusiness] = useState("");
+  const [age, setAge] = useState("");
   const [busy, setBusy] = useState(false);
+  const [welcome, setWelcome] = useState(false);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
-    if (localStorage.getItem(SKIP_KEY)) return;
     let cancelled = false;
-    const run = async () => {
-      await new Promise((r) => setTimeout(r, 400));
-      if (cancelled || !supabase) {
-        if (!localStorage.getItem(SKIP_KEY)) setOpen(true);
+    (async () => {
+      const logged = await isLoggedIn();
+      if (cancelled) return;
+      if (logged) {
+        setOpen(false);
+        onAuthed?.();
         return;
       }
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (!cancelled && !data.session) setOpen(true);
-      } catch {
-        if (!cancelled) setOpen(true);
-      }
-    };
-    run();
+      const exists = await hasAccount();
+      setMode(exists ? "login" : "signup");
+      setOpen(true);
+    })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onAuthed]);
+
+  useEffect(() => {
+    if (mode !== "signup") {
+      setShowConfirm(false);
+      return;
+    }
+    if (password.length >= 4) {
+      const tmr = setTimeout(() => setShowConfirm(true), 400);
+      return () => clearTimeout(tmr);
+    }
+    setShowConfirm(false);
+    setConfirm("");
+  }, [password, mode]);
 
   if (!open) return null;
 
-  const skip = () => {
-    localStorage.setItem(SKIP_KEY, "1");
-    setOpen(false);
-  };
+  const progress = step === 1 ? 50 : 100;
 
-  const signInEmail = async () => {
-    if (!supabase) return;
-    setBusy(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) toast.error(error.message);
-      else {
-        toast.success(t("signedIn"));
-        localStorage.setItem(SKIP_KEY, "1");
-        setOpen(false);
-        trySync().catch(() => {});
+  const continueStep1 = async () => {
+    if (!identifier.trim()) {
+      toast.error(tab === "phone" ? t("phone") : t("email"));
+      return;
+    }
+    if (password.length < 4) {
+      toast.error(t("password"));
+      return;
+    }
+    if (mode === "login") {
+      setBusy(true);
+      const res = await signIn({ loginType: tab, identifier, password });
+      setBusy(false);
+      if (!res.ok) {
+        if (res.error === "no_account") {
+          toast.message(t("needSignUp"));
+          setMode("signup");
+          return;
+        }
+        toast.error(t("badLogin"));
+        return;
       }
-    } finally {
-      setBusy(false);
+      setWelcome(true);
+      setTimeout(() => {
+        setOpen(false);
+        onAuthed?.();
+      }, 900);
+      return;
     }
+    if (showConfirm && confirm !== password) {
+      toast.error(t("passwordMismatch"));
+      return;
+    }
+    if (!showConfirm) {
+      setShowConfirm(true);
+      return;
+    }
+    setStep(2);
   };
 
-  const signUpEmail = async () => {
-    if (!supabase) return;
+  const submitProfile = async () => {
     setBusy(true);
     try {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) toast.error(error.message);
-      else toast.success(t("checkEmail"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const signInGoogle = async () => {
-    if (!supabase) return;
-    setBusy(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: window.location.origin },
+      const res = await signUp({
+        loginType: tab,
+        identifier,
+        password,
+        fullName,
+        businessName: business,
+        age,
       });
-      if (error) toast.error(error.message);
+      if (!res.ok) {
+        toast.error(res.error === "exists" ? t("needLogin") : t("badLogin"));
+        return;
+      }
+      setWelcome(true);
+      setTimeout(() => {
+        setOpen(false);
+        onAuthed?.();
+      }, 1000);
     } finally {
       setBusy(false);
     }
+  };
+
+  const submitRecover = async () => {
+    if (password.length < 4) {
+      toast.error(t("password"));
+      return;
+    }
+    setBusy(true);
+    const res = await recoverPassword({
+      fullName,
+      businessName: business,
+      age,
+      newPassword: password,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(t("verifyFail"));
+      return;
+    }
+    setWelcome(true);
+    setTimeout(() => {
+      setOpen(false);
+      onAuthed?.();
+    }, 1000);
   };
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center">
-      <div className="w-full max-w-sm rounded-3xl bg-background p-5 shadow-2xl">
-        <div className="mb-4 text-center">
-          <div className="mx-auto mb-3 grid size-14 place-items-center rounded-2xl bg-hero text-2xl text-primary-foreground">
-            🏪
+      <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-background shadow-2xl">
+        <div className="flex gap-2 px-5 pt-5">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: step >= 1 ? "100%" : "0%" }} />
           </div>
-          <h2 className="text-xl font-bold">{t("welcomeTitle")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("welcomeBody")}</p>
-        </div>
-
-        <div className="space-y-2">
-          <button type="button" disabled={busy} onClick={signInGoogle} className="flex h-12 w-full items-center justify-center gap-2 rounded-full border bg-card font-semibold">
-            <span className="text-lg">G</span> {t("continueGoogle")}
-          </button>
-          <Input type="email" placeholder={t("email")} value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 rounded-xl" />
-          <Input type="password" placeholder={t("password")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" disabled={busy} onClick={signInEmail} className="h-12 rounded-full bg-primary font-semibold text-primary-foreground">
-              {t("signIn")}
-            </button>
-            <button type="button" disabled={busy} onClick={signUpEmail} className="h-12 rounded-full border font-semibold">
-              {t("signUp")}
-            </button>
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: step >= 2 || welcome ? "100%" : "0%" }} />
           </div>
         </div>
+        <p className="px-5 pt-1 text-[10px] text-muted-foreground">
+          {step}/2 · {progress}%
+        </p>
 
-        <button type="button" onClick={skip} className="mt-4 w-full py-3 text-center text-sm font-medium text-muted-foreground underline-offset-2 hover:underline">
-          {t("skipForNow")}
-        </button>
-        <p className="mt-1 text-center text-[11px] text-muted-foreground">{t("skipHint")}</p>
+        <div className="p-5">
+          <div className="mb-4 text-center">
+            <div className="mx-auto mb-2 grid size-12 place-items-center rounded-2xl bg-hero text-xl text-primary-foreground">🏪</div>
+            <h2 className="text-lg font-bold">
+              {mode === "recover" ? t("recoverTitle") : mode === "login" ? t("signIn") : t("signUp")}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
+            </p>
+          </div>
+
+          {step === 1 && mode !== "recover" && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
+                {(["phone", "email"] as const).map((k) => (
+                  <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>
+                    {k === "phone" ? t("phone") : t("email")}
+                  </button>
+                ))}
+              </div>
+              <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
+              <Input type="password" placeholder={t("password")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+              {mode === "signup" && showConfirm && (
+                <Input type="password" placeholder={t("reenterPassword")} value={confirm} onChange={(e) => setConfirm(e.target.value)} className="h-12 rounded-xl" autoFocus />
+              )}
+              <button type="button" disabled={busy} onClick={continueStep1} className={cn("h-12 w-full rounded-full font-semibold text-primary-foreground transition-colors", welcome ? "bg-success" : "bg-primary")}>
+                {welcome ? t("welcomeBtn") : mode === "login" ? t("signIn") : t("continue")}
+              </button>
+              <div className="flex justify-between text-xs">
+                {mode === "login" ? (
+                  <>
+                    <button type="button" className="font-medium text-primary" onClick={() => setMode("signup")}>{t("needSignUp")}</button>
+                    <button type="button" className="text-muted-foreground" onClick={async () => {
+                      const a = await getAccount();
+                      if (!a) { toast.message(t("needSignUp")); setMode("signup"); return; }
+                      setMode("recover"); setStep(2); setPassword("");
+                    }}>{t("forgotPassword")}</button>
+                  </>
+                ) : (
+                  <button type="button" className="font-medium text-primary" onClick={() => setMode("login")}>{t("needLogin")}</button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(step === 2 || mode === "recover") && !welcome && (
+            <div className="space-y-3">
+              <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
+              <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
+              <Input type="number" inputMode="numeric" placeholder={t("age")} value={age} onChange={(e) => setAge(e.target.value)} className="h-12 rounded-xl" />
+              {mode === "recover" && (
+                <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+              )}
+              <button type="button" disabled={busy} onClick={mode === "recover" ? submitRecover : submitProfile} className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">
+                {t("submit")}
+              </button>
+              {mode === "recover" && (
+                <button type="button" className="w-full text-xs text-muted-foreground" onClick={() => { setMode("login"); setStep(1); }}>{t("signIn")}</button>
+              )}
+            </div>
+          )}
+
+          {welcome && (
+            <button type="button" className="h-12 w-full rounded-full bg-success font-bold text-white">{t("welcomeBtn")}</button>
+          )}
+        </div>
       </div>
     </div>
   );
