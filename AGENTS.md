@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- All shop data lives on-device in IndexedDB via Dexie (`src/lib/db.ts`); every write goes through `src/lib/actions.ts` and queues an outbox row — keeps the app fully offline and ready for later cloud sync.
