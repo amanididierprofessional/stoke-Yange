@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Undo2 } from "lucide-react";
+import { useState } from "react";
+import { Plus, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { db, type Sale } from "@/lib/db";
 import { fmt, reverseSale, UNDO_WINDOW_MS } from "@/lib/actions";
@@ -23,6 +24,21 @@ function HistoryPage() {
   const { t } = useI18n();
   const sales = useLiveQuery(() => db.sales.orderBy("createdAt").reverse().limit(500).toArray(), []) ?? [];
   const parties = useLiveQuery(() => db.parties.toArray(), []) ?? [];
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const toggle = (id: number) => {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
+  const clearSel = () => setSelected(new Set());
+
+  const selectedSales = sales.filter((s) => s.id != null && selected.has(s.id) && !s.reversed);
+  const selectedTotal = selectedSales.reduce((a, s) => a + s.total, 0);
+
   const groups = new Map<string, Sale[]>();
   for (const s of sales) {
     const k = new Date(s.createdAt).toDateString();
@@ -33,6 +49,20 @@ function HistoryPage() {
   return (
     <div className="space-y-5">
       <h2 className="text-2xl font-bold">{t("history")}</h2>
+
+      {selected.size > 0 && (
+        <section className="relative rounded-3xl bg-hero p-5 text-primary-foreground shadow-card">
+          <button type="button" onClick={clearSel} className="absolute right-3 top-3 grid size-9 place-items-center rounded-full bg-white/20" aria-label="Close">
+            <X className="size-4" />
+          </button>
+          <p className="text-xs font-medium opacity-90">{t("selectedTotal")}</p>
+          <p className="text-3xl font-bold tabular-nums tracking-tight">{fmt(selectedTotal)}</p>
+          <p className="mt-1 text-xs opacity-90">
+            {selectedSales.length} {t("itemsSelected")}
+          </p>
+        </section>
+      )}
+
       {[...groups.entries()].map(([day, list]) => {
         const live = list.filter((s) => !s.reversed);
         const cash = live.filter((s) => s.type === "cash").reduce((a, s) => a + s.total, 0);
@@ -41,7 +71,7 @@ function HistoryPage() {
         return (
           <section key={day} className="space-y-2">
             <div className="rounded-2xl bg-card p-3 shadow-card sm:p-4">
-              <p className="font-semibold text-sm sm:text-base">
+              <p className="text-sm font-semibold sm:text-base">
                 {day === todayKey
                   ? t("today")
                   : new Date(day).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
@@ -55,8 +85,9 @@ function HistoryPage() {
             <ul className="space-y-2">
               {list.map((s) => {
                 const canUndo = !s.reversed && Date.now() - s.createdAt < UNDO_WINDOW_MS;
+                const isSel = s.id != null && selected.has(s.id);
                 return (
-                  <li key={s.id} className={cn("flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5 sm:gap-3", s.reversed && "opacity-50")}>
+                  <li key={s.id} className={cn("flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5 sm:gap-3", s.reversed && "opacity-50", isSel && "ring-2 ring-primary bg-primary/5")}>
                     <div className="min-w-0 flex-1">
                       <p className={cn("truncate text-sm font-medium", s.reversed && "line-through")}>
                         {s.qty} × {s.productName}
@@ -66,22 +97,17 @@ function HistoryPage() {
                         {s.partyId && ` · ${parties.find((p) => p.id === s.partyId)?.name ?? ""}`}
                       </p>
                     </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]",
-                        s.reversed ? "bg-muted" : s.type === "cash" ? "bg-success/15 text-success" : "bg-primary/15 text-primary",
-                      )}
-                    >
+                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]", s.reversed ? "bg-muted" : s.type === "cash" ? "bg-success/15 text-success" : "bg-primary/15 text-primary")}>
                       {s.reversed ? t("reversed") : s.type === "cash" ? t("cash") : t("creditIdeni")}
                     </span>
                     <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums sm:w-24 sm:text-sm">{fmt(s.total)}</span>
+                    {!s.reversed && (
+                      <button type="button" aria-label="Select" onClick={() => s.id != null && toggle(s.id)} className={cn("grid size-9 shrink-0 place-items-center rounded-full border", isSel && "border-primary bg-primary text-primary-foreground")}>
+                        <Plus className="size-4" />
+                      </button>
+                    )}
                     {canUndo && (
-                      <button
-                        type="button"
-                        aria-label={t("undo")}
-                        onClick={() => reverseSale(s.id!).then(() => toast(t("reversed"))).catch((e) => toast.error(e.message))}
-                        className="grid size-9 shrink-0 place-items-center rounded-full border"
-                      >
+                      <button type="button" aria-label={t("undo")} onClick={() => reverseSale(s.id!).then(() => toast(t("reversed"))).catch((e) => toast.error(e.message))} className="grid size-9 shrink-0 place-items-center rounded-full border">
                         <Undo2 className="size-4" />
                       </button>
                     )}
@@ -100,8 +126,8 @@ function HistoryPage() {
 function Stat({ label, v, cls }: { label: string; v: string; cls: string }) {
   return (
     <div className="rounded-xl bg-muted px-2 py-2 text-center sm:p-2">
-      <p className="text-[10px] leading-tight text-muted-foreground sm:text-[10px]">{label}</p>
-      <p className={cn("mt-0.5 text-sm font-bold tabular-nums sm:text-sm", cls)}>{v}</p>
+      <p className="truncate text-[10px] text-muted-foreground sm:text-xs">{label}</p>
+      <p className={cn("text-xs font-bold tabular-nums sm:text-sm", cls)}>{v}</p>
     </div>
   );
 }
