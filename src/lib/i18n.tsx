@@ -118,6 +118,11 @@ const dict = {
   newPassword: ["New password", "Ijambo ry'ibanga rishya"],
   selectedTotal: ["Selected sales total", "Igiteranyo cyatoranyijwe"],
   itemsSelected: ["items selected", "byatoranyijwe"],
+  logout: ["Log out", "Sohoka"],
+  signedOut: ["Logged out", "Wasohotse"],
+  syncNow: ["Sync to cloud now", "Ohereza kuri cloud"],
+  synced: ["Synced to cloud", "Byoherejwe kuri cloud"],
+  contactDev: ["Need help?", "Ukeneye ubufasha?"],
 } as const;
 
 export type Key = keyof typeof dict;
