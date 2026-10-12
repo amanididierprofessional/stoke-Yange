@@ -8,7 +8,7 @@ describe("sale rules", () => {
   it("rejects zero quantity", () => {
     expect(() => computeSale(0, 500)).toThrow();
   });
-  it("undo window is 10 minutes", () => {
-    expect(UNDO_WINDOW_MS).toBe(600000);
+  it("undo window is 24 hours", () => {
+    expect(UNDO_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
   });
 });
