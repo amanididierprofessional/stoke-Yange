@@ -52,8 +52,8 @@ function HistoryPage() {
 
       {selected.size > 0 && (
         <section className="relative rounded-3xl bg-hero p-5 text-primary-foreground shadow-card">
-          <button type="button" onClick={clearSel} className="absolute right-3 top-3 grid size-9 place-items-center rounded-full bg-white/20" aria-label="Close">
-            <X className="size-4" />
+          <button type="button" onClick={clearSel} className="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/20" aria-label="Close">
+            <X className="size-3.5" />
           </button>
           <p className="text-xs font-medium opacity-90">{t("selectedTotal")}</p>
           <p className="text-3xl font-bold tabular-nums tracking-tight">{fmt(selectedTotal)}</p>
@@ -87,7 +87,14 @@ function HistoryPage() {
                 const canUndo = !s.reversed && Date.now() - s.createdAt < UNDO_WINDOW_MS;
                 const isSel = s.id != null && selected.has(s.id);
                 return (
-                  <li key={s.id} className={cn("flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5 sm:gap-3", s.reversed && "opacity-50", isSel && "ring-2 ring-primary bg-primary/5")}>
+                  <li
+                    key={s.id}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-2xl bg-card px-3 py-2.5 sm:gap-2",
+                      s.reversed && "opacity-50",
+                      isSel && "bg-primary/5 ring-2 ring-primary",
+                    )}
+                  >
                     <div className="min-w-0 flex-1">
                       <p className={cn("truncate text-sm font-medium", s.reversed && "line-through")}>
                         {s.qty} × {s.productName}
@@ -97,20 +104,40 @@ function HistoryPage() {
                         {s.partyId && ` · ${parties.find((p) => p.id === s.partyId)?.name ?? ""}`}
                       </p>
                     </div>
-                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]", s.reversed ? "bg-muted" : s.type === "cash" ? "bg-success/15 text-success" : "bg-primary/15 text-primary")}>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        s.reversed ? "bg-muted" : s.type === "cash" ? "bg-success/15 text-success" : "bg-primary/15 text-primary",
+                      )}
+                    >
                       {s.reversed ? t("reversed") : s.type === "cash" ? t("cash") : t("creditIdeni")}
                     </span>
-                    <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums sm:w-24 sm:text-sm">{fmt(s.total)}</span>
-                    {!s.reversed && (
-                      <button type="button" aria-label="Select" onClick={() => s.id != null && toggle(s.id)} className={cn("grid size-9 shrink-0 place-items-center rounded-full border", isSel && "border-primary bg-primary text-primary-foreground")}>
-                        <Plus className="size-4" />
-                      </button>
-                    )}
-                    {canUndo && (
-                      <button type="button" aria-label={t("undo")} onClick={() => reverseSale(s.id!).then(() => toast(t("reversed"))).catch((e) => toast.error(e.message))} className="grid size-9 shrink-0 place-items-center rounded-full border">
-                        <Undo2 className="size-4" />
-                      </button>
-                    )}
+                    <span className="w-14 shrink-0 text-right text-xs font-semibold tabular-nums sm:w-20">{fmt(s.total)}</span>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {!s.reversed && (
+                        <button
+                          type="button"
+                          aria-label="Select"
+                          onClick={() => s.id != null && toggle(s.id)}
+                          className={cn(
+                            "grid size-7 place-items-center rounded-full border",
+                            isSel && "border-primary bg-primary text-primary-foreground",
+                          )}
+                        >
+                          <Plus className="size-3.5" />
+                        </button>
+                      )}
+                      {canUndo && (
+                        <button
+                          type="button"
+                          aria-label={t("undo")}
+                          onClick={() => reverseSale(s.id!).then(() => toast(t("reversed"))).catch((e) => toast.error(e.message))}
+                          className="grid size-7 place-items-center rounded-full border"
+                        >
+                          <Undo2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}
