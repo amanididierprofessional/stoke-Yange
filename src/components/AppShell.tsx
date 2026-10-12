@@ -6,6 +6,7 @@ import { db, ensureSeeded } from "@/lib/db";
 import { trySync } from "@/lib/sync";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { AuthWelcome } from "@/components/AuthWelcome";
 
 export function useShopName() {
   return useLiveQuery(() => db.settings.get("shopName"), [])?.value ?? "Iduka Ryanjye";
@@ -66,34 +67,17 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="flex h-9 items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm"
               aria-label="Toggle language"
             >
-              <span
-                className={cn(
-                  "rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
-                  lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground",
-                )}
-              >
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
                 EN
               </span>
-              <span
-                className={cn(
-                  "rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
-                  lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground",
-                )}
-              >
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
                 RW
               </span>
             </button>
-            <Link
-              to="/stock"
-              search={{ low: true }}
-              className="relative grid size-9 place-items-center rounded-full border bg-card"
-              aria-label="Low stock"
-            >
+            <Link to="/stock" search={{ low: true }} className="relative grid size-9 place-items-center rounded-full border bg-card" aria-label="Low stock">
               <Bell className="size-4" />
               {lowCount > 0 && (
-                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  {lowCount}
-                </span>
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{lowCount}</span>
               )}
             </Link>
             <Link to="/settings" className="grid size-9 place-items-center rounded-full border bg-card" aria-label={t("settings")}>
@@ -103,18 +87,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="px-4">{ready ? children : <BootSkeleton />}</main>
+      <AuthWelcome />
       <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[calc(100%-2rem)] max-w-sm items-center justify-between gap-1 rounded-full bg-ink p-1.5 shadow-card">
         {tabs.map(({ to, label, icon: Icon }) => {
           const active = to === "/" ? path === "/" : path.startsWith(to);
           return (
-            <Link
-              key={to}
-              to={to}
-              className={cn(
-                "flex h-12 items-center justify-center gap-2 rounded-full transition-all",
-                active ? "flex-[2] bg-primary px-4 text-primary-foreground" : "flex-1 text-ink-foreground/70",
-              )}
-            >
+            <Link key={to} to={to} className={cn("flex h-12 items-center justify-center gap-2 rounded-full transition-all", active ? "flex-[2] bg-primary px-4 text-primary-foreground" : "flex-1 text-ink-foreground/70")}>
               <Icon className="size-5 shrink-0" />
               {active && <span className="truncate text-sm font-semibold">{label}</span>}
             </Link>
@@ -139,28 +117,12 @@ function BootSkeleton() {
   );
 }
 
-export function CategoryPills({
-  value,
-  onChange,
-  categories,
-}: {
-  value: string;
-  onChange: (c: string) => void;
-  categories: string[];
-}) {
+export function CategoryPills({ value, onChange, categories }: { value: string; onChange: (c: string) => void; categories: string[] }) {
   const { t } = useI18n();
   return (
     <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
       {["__all", ...categories].map((c) => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => onChange(c)}
-          className={cn(
-            "h-9 shrink-0 rounded-full px-4 text-sm font-medium transition-colors",
-            value === c ? "bg-primary text-primary-foreground" : "border bg-card text-foreground",
-          )}
-        >
+        <button key={c} type="button" onClick={() => onChange(c)} className={cn("h-9 shrink-0 rounded-full px-4 text-sm font-medium transition-colors", value === c ? "bg-primary text-primary-foreground" : "border bg-card text-foreground")}>
           {c === "__all" ? t("all") : c}
         </button>
       ))}
