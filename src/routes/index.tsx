@@ -40,16 +40,17 @@ function SellPage() {
 
   return (
     <div className="space-y-4">
+      {/* Hero: Today's cash primary, inventory secondary */}
       <section className="rounded-3xl bg-hero p-5 text-primary-foreground shadow-card">
-        <p className="text-xs font-medium opacity-90">{t("stockValue")}</p>
-        <p className="text-3xl font-bold tabular-nums">{fmt(costValue)}</p>
+        <p className="text-xs font-medium opacity-90">{t("todayCash")}</p>
+        <p className="text-3xl font-bold tabular-nums tracking-tight">{fmt(cash)}</p>
         <p className="mt-1 text-xs opacity-90">
           {t("salesValue")}: <b>{fmt(saleValue)}</b>
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <div className="rounded-2xl bg-primary-foreground/15 p-3">
-            <p className="text-[11px] opacity-90">{t("todayCash")}</p>
-            <p className="font-bold tabular-nums">{fmt(cash)}</p>
+            <p className="text-[11px] opacity-90">{t("stockValue")}</p>
+            <p className="font-bold tabular-nums">{fmt(costValue)}</p>
           </div>
           <div className="rounded-2xl bg-primary-foreground/15 p-3">
             <p className="text-[11px] opacity-90">{t("todayCredit")}</p>
@@ -70,7 +71,12 @@ function SellPage() {
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("search")} className="h-12 w-full rounded-full border bg-card pl-11 pr-4 text-sm outline-none focus:ring-2 focus:ring-ring" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t("search")}
+          className="h-12 w-full rounded-full border bg-card pl-11 pr-4 text-sm outline-none focus:ring-2 focus:ring-ring"
+        />
       </div>
       <CategoryPills value={cat} onChange={setCat} categories={cats} />
 
