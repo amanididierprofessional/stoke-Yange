@@ -200,40 +200,56 @@ export async function recoverPassword(opts: {
   return { ok: true };
 }
 
-/** Log out: clear session + local account + all shop data on this phone. Cloud data stays. */
+/** Clear session flag only (no DB wipe). */
+export function clearSessionOnly() {
+  setLoggedIn(false);
+}
+
+/** Log out: clear session + local account + all app data on this device. Cloud stays. */
 export async function signOutLocal() {
   setLoggedIn(false);
+  // Fire-and-forget cloud sign-out so UI is not blocked
   if (supabase) {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      /* */
-    }
+    void supabase.auth.signOut().catch(() => {});
   }
-  // Wipe local shop + account so next user starts clean on this device
   await factoryReset(false);
   await db.settings.delete(KEY);
   await db.settings.delete("shopName");
 }
 
-/** Delete all cloud rows for the current Supabase user (best-effort). */
+/**
+ * Wipe cloud rows for current user — parallel deletes + hard timeout so phone never hangs.
+ */
 export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }> {
   if (!supabaseConfigured || !supabase) return { ok: false, reason: "not_configured" };
   if (!navigator.onLine) return { ok: false, reason: "offline" };
-  try {
-    const { data } = await supabase.auth.getSession();
-    const uid = data.session?.user?.id;
-    if (!uid) return { ok: false, reason: "no_session" };
-    const tables = ["movements", "payments", "debts", "sales", "parties", "products", "profiles"] as const;
-    for (const table of tables) {
-      if (table === "profiles") {
-        await supabase.from(table).delete().eq("id", uid);
-      } else {
-        await supabase.from(table).delete().eq("user_id", uid);
-      }
+
+  const run = async (): Promise<{ ok: boolean; reason?: string }> => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const uid = data.session?.user?.id;
+      if (!uid) return { ok: false, reason: "no_session" };
+
+      await Promise.all([
+        supabase.from("movements").delete().eq("user_id", uid),
+        supabase.from("payments").delete().eq("user_id", uid),
+        supabase.from("debts").delete().eq("user_id", uid),
+        supabase.from("sales").delete().eq("user_id", uid),
+        supabase.from("parties").delete().eq("user_id", uid),
+        supabase.from("products").delete().eq("user_id", uid),
+        supabase.from("profiles").delete().eq("id", uid),
+      ]);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: String(e) };
     }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: String(e) };
-  }
+  };
+
+  // Never block the phone more than 6s on cloud wipe
+  return Promise.race([
+    run(),
+    new Promise<{ ok: boolean; reason?: string }>((resolve) =>
+      setTimeout(() => resolve({ ok: false, reason: "timeout" }), 6000),
+    ),
+  ]);
 }

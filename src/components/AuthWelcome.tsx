@@ -15,11 +15,11 @@ import { cn } from "@/lib/utils";
 type Mode = "login" | "signup" | "recover";
 type Step = 1 | 2;
 
-/** Required 2-step auth (no skip). Phone|Email + password, then profile / recovery. */
+/** Required 2-step auth. Default = login. Visible Sign in / Sign up toggle. */
 export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<Mode>("signup");
+  const [mode, setMode] = useState<Mode>("login");
   const [step, setStep] = useState<Step>(1);
   const [tab, setTab] = useState<"phone" | "email">("phone");
   const [identifier, setIdentifier] = useState("");
@@ -43,8 +43,8 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         onAuthed?.();
         return;
       }
-      const exists = await hasAccount();
-      setMode(exists ? "login" : "signup");
+      // Always start on login; user can switch to sign up
+      setMode("login");
       setOpen(true);
     })();
     return () => {
@@ -69,6 +69,31 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
 
   const progress = step === 1 ? 50 : 100;
 
+  const goLogin = () => {
+    setMode("login");
+    setStep(1);
+    setShowConfirm(false);
+    setRecoverFailed(false);
+  };
+  const goSignup = () => {
+    setMode("signup");
+    setStep(1);
+    setShowConfirm(false);
+    setRecoverFailed(false);
+  };
+  const goRecover = async () => {
+    const a = await getAccount();
+    if (!a) {
+      toast.message(t("needSignUp"));
+      goSignup();
+      return;
+    }
+    setMode("recover");
+    setStep(2);
+    setPassword("");
+    setRecoverFailed(false);
+  };
+
   const continueStep1 = async () => {
     if (!identifier.trim()) {
       toast.error(tab === "phone" ? t("phone") : t("email"));
@@ -83,9 +108,15 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       const res = await signIn({ loginType: tab, identifier, password });
       setBusy(false);
       if (!res.ok) {
-        if (res.error === "no_account") {
+        if (res.error === "no_account" || res.error === "mismatch") {
           toast.message(t("needSignUp"));
-          setMode("signup");
+          goSignup();
+          return;
+        }
+        if (res.error === "bad_password") {
+          toast.error(t("badLogin"));
+          // Suggest recovery
+          toast.message(t("forgotPassword"));
           return;
         }
         toast.error(t("badLogin"));
@@ -121,7 +152,12 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         age,
       });
       if (!res.ok) {
-        toast.error(res.error === "exists" ? t("needLogin") : t("badLogin"));
+        if (res.error === "exists") {
+          toast.message(t("needLogin"));
+          goLogin();
+          return;
+        }
+        toast.error(t("badLogin"));
         return;
       }
       setWelcome(true);
@@ -163,6 +199,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center">
       <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-background shadow-2xl">
+        {/* Progress */}
         <div className="flex gap-2 px-5 pt-5">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: step >= 1 ? "100%" : "0%" }} />
@@ -186,37 +223,90 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             </p>
           </div>
 
+          {/* Visible Sign in | Sign up toggle (not only a bottom link) */}
+          {mode !== "recover" && (
+            <div className="mb-4 grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
+              <button
+                type="button"
+                onClick={goLogin}
+                className={cn(
+                  "h-11 rounded-full text-sm font-bold transition-colors",
+                  mode === "login" ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground",
+                )}
+              >
+                {t("signIn")}
+              </button>
+              <button
+                type="button"
+                onClick={goSignup}
+                className={cn(
+                  "h-11 rounded-full text-sm font-bold transition-colors",
+                  mode === "signup" ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground",
+                )}
+              >
+                {t("signUp")}
+              </button>
+            </div>
+          )}
+
           {step === 1 && mode !== "recover" && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
                 {(["phone", "email"] as const).map((k) => (
-                  <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setTab(k)}
+                    className={cn(
+                      "h-10 rounded-full text-sm font-semibold",
+                      tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground",
+                    )}
+                  >
                     {k === "phone" ? t("phone") : t("email")}
                   </button>
                 ))}
               </div>
-              <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
-              <Input type="password" placeholder={t("password")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+              <Input
+                type={tab === "email" ? "email" : "tel"}
+                inputMode={tab === "email" ? "email" : "tel"}
+                placeholder={tab === "phone" ? t("phone") : t("email")}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="h-12 rounded-xl"
+              />
+              <Input
+                type="password"
+                placeholder={t("password")}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-12 rounded-xl"
+              />
               {mode === "signup" && showConfirm && (
-                <Input type="password" placeholder={t("reenterPassword")} value={confirm} onChange={(e) => setConfirm(e.target.value)} className="h-12 rounded-xl" autoFocus />
+                <Input
+                  type="password"
+                  placeholder={t("reenterPassword")}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  className="h-12 rounded-xl"
+                  autoFocus
+                />
               )}
-              <button type="button" disabled={busy} onClick={continueStep1} className={cn("h-12 w-full rounded-full font-semibold text-primary-foreground transition-colors", welcome ? "bg-success" : "bg-primary")}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={continueStep1}
+                className={cn(
+                  "h-12 w-full rounded-full font-semibold text-primary-foreground transition-colors",
+                  welcome ? "bg-success" : "bg-primary",
+                )}
+              >
                 {welcome ? t("welcomeBtn") : mode === "login" ? t("signIn") : t("continue")}
               </button>
-              <div className="flex justify-between text-xs">
-                {mode === "login" ? (
-                  <>
-                    <button type="button" className="font-medium text-primary" onClick={() => setMode("signup")}>{t("needSignUp")}</button>
-                    <button type="button" className="text-muted-foreground" onClick={async () => {
-                      const a = await getAccount();
-                      if (!a) { toast.message(t("needSignUp")); setMode("signup"); return; }
-                      setMode("recover"); setStep(2); setPassword(""); setRecoverFailed(false);
-                    }}>{t("forgotPassword")}</button>
-                  </>
-                ) : (
-                  <button type="button" className="font-medium text-primary" onClick={() => setMode("login")}>{t("needLogin")}</button>
-                )}
-              </div>
+              {mode === "login" && (
+                <button type="button" className="w-full text-center text-xs font-medium text-primary" onClick={goRecover}>
+                  {t("forgotPassword")}
+                </button>
+              )}
             </div>
           )}
 
@@ -228,25 +318,38 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
               {mode === "recover" && (
                 <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
               )}
-              <button type="button" disabled={busy} onClick={mode === "recover" ? submitRecover : submitProfile} className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={mode === "recover" ? submitRecover : submitProfile}
+                className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground"
+              >
                 {t("submit")}
               </button>
               {mode === "recover" && (
-                <button type="button" className="w-full text-xs text-muted-foreground" onClick={() => { setMode("login"); setStep(1); setRecoverFailed(false); }}>{t("signIn")}</button>
+                <button type="button" className="w-full text-xs text-muted-foreground" onClick={goLogin}>
+                  {t("signIn")}
+                </button>
               )}
               {recoverFailed && (
                 <p className="pt-1 text-center text-[11px] text-muted-foreground">
                   {t("contactDev")}{" "}
-                  <a href="tel:0796919900" className="underline">0796919900</a>
+                  <a href="tel:0796919900" className="underline">
+                    0796919900
+                  </a>
                   {" · "}
-                  <a href="https://wa.me/250796919900" target="_blank" rel="noreferrer" className="underline">WhatsApp</a>
+                  <a href="https://wa.me/250796919900" target="_blank" rel="noreferrer" className="underline">
+                    WhatsApp
+                  </a>
                 </p>
               )}
             </div>
           )}
 
           {welcome && (
-            <button type="button" className="h-12 w-full rounded-full bg-success font-bold text-white">{t("welcomeBtn")}</button>
+            <button type="button" className="h-12 w-full rounded-full bg-success font-bold text-white">
+              {t("welcomeBtn")}
+            </button>
           )}
         </div>
       </div>
