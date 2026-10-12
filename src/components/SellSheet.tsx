@@ -2,25 +2,29 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Minus, Plus, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { db, type Product, type SaleType } from "@/lib/db";
 import { addParty, fmt, recordSale, reverseSale } from "@/lib/actions";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type Key } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-export async function quickSell(p: Product, t: (k: any) => string) {
+export async function quickSell(p: Product, t: (k: Key) => string) {
   try {
+    if (p.stock < 1) {
+      toast.error(t("notEnough"));
+      return;
+    }
     const id = await recordSale({ productId: p.id!, qty: 1, unitPrice: p.price, type: "cash" });
     toast.success(`${t("sold")}: ${p.name}`, {
       description: fmt(p.price),
-      action: { label: t("undo"), onClick: () => reverseSale(id) },
+      action: { label: t("undo"), onClick: () => reverseSale(id).catch(() => {}) },
     });
   } catch (e) {
     toast.error((e as Error).message === "Not enough stock" ? t("notEnough") : (e as Error).message);
   }
 }
 
+/** Bottom sheet for selling — plain fixed panel (no Vaul) so it never takes down the whole page. */
 export function SellSheet({ product, onClose }: { product: Product | null; onClose: () => void }) {
   const { t } = useI18n();
   const [qty, setQty] = useState(1);
@@ -29,31 +33,47 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
   const [type, setType] = useState<SaleType>("cash");
   const [partyId, setPartyId] = useState<number | "new" | "">("");
   const [newName, setNewName] = useState("");
-  const customers = useLiveQuery(() => db.parties.where("kind").equals("customer").sortBy("name"), []) ?? [];
+  const customers = useLiveQuery(() => db.parties.where("kind").equals("customer").toArray(), []) ?? [];
 
   useEffect(() => {
     if (product) {
       setQty(1);
       setQtyText("1");
-      setPrice(String(product.price));
+      setPrice(String(product.price ?? 0));
       setType("cash");
       setPartyId("");
       setNewName("");
     }
   }, [product]);
 
+  useEffect(() => {
+    if (!product) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [product, onClose]);
+
   if (!product) return null;
+
+  const maxStock = Math.max(0, product.stock);
   const unit = Number(price) || 0;
   const total = qty * unit;
 
   const applyQty = (n: number) => {
-    const clamped = Math.max(1, Math.min(product.stock, Math.floor(n) || 1));
+    const floor = Math.floor(Number(n)) || 0;
+    const clamped = maxStock <= 0 ? 0 : Math.max(1, Math.min(maxStock, floor || 1));
     setQty(clamped);
-    setQtyText(String(clamped));
+    setQtyText(String(clamped || ""));
   };
 
   const submit = async () => {
     try {
+      if (maxStock < 1 || qty < 1) {
+        toast.error(t("notEnough"));
+        return;
+      }
       let pid: number | undefined;
       if (type === "credit") {
         if (partyId === "new") {
@@ -62,8 +82,9 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
             return;
           }
           pid = await addParty(newName, "", "customer");
-        } else if (partyId) pid = partyId;
-        else {
+        } else if (typeof partyId === "number") {
+          pid = partyId;
+        } else {
           toast.error(t("customer"));
           return;
         }
@@ -77,7 +98,7 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
       });
       toast.success(`${t("sold")}: ${qty} × ${product.name}`, {
         description: fmt(total),
-        action: { label: t("undo"), onClick: () => reverseSale(id) },
+        action: { label: t("undo"), onClick: () => reverseSale(id).catch(() => {}) },
       });
       onClose();
     } catch (e) {
@@ -85,19 +106,26 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
     }
   };
 
+  const sortedCustomers = [...customers].sort((a, b) => a.name.localeCompare(b.name));
+
   return (
-    <Drawer open={!!product} onOpenChange={(o) => !o && onClose()}>
-      <DrawerContent className="mx-auto max-w-md">
-        <DrawerHeader className="flex-row items-center gap-3 text-left">
-          <span className="grid size-14 place-items-center rounded-2xl bg-accent text-3xl">{product.emoji}</span>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+      <button type="button" className="absolute inset-0 bg-black/50" aria-label="Close" onClick={onClose} />
+      <div className="relative z-[81] flex max-h-[90vh] w-full max-w-md flex-col rounded-t-3xl bg-background shadow-2xl sm:rounded-3xl">
+        <div className="flex items-center gap-3 border-b px-4 py-3">
+          <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-accent text-3xl">{product.emoji || "📦"}</span>
           <div className="min-w-0 flex-1">
-            <DrawerTitle className="text-lg">{product.name}</DrawerTitle>
+            <h2 className="truncate text-lg font-bold">{product.name}</h2>
             <p className="text-sm text-muted-foreground">
               {product.stock} {product.unit} {t("left")}
             </p>
           </div>
-        </DrawerHeader>
-        <div className="space-y-4 overflow-y-auto px-4 pb-8" style={{ maxHeight: "min(70vh, 520px)" }}>
+          <button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full border" aria-label="Close">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 overflow-y-auto px-4 py-4">
           <div className="flex items-center justify-between rounded-2xl bg-muted p-3">
             <span className="text-sm font-medium">{t("quantity")}</span>
             <div className="flex items-center gap-2">
@@ -112,8 +140,8 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
           </div>
 
           <label className="block">
-            <span className="text-sm font-medium">{t("unitPrice")}</span>
-            <Input type="text" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))} className="mt-1 h-12 rounded-xl text-lg font-semibold" />
+            <span className="text-sm font-medium">{t("price")} (RWF)</span>
+            <Input inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))} className="mt-1 h-12 rounded-xl text-lg font-semibold" />
           </label>
 
           <div className="grid grid-cols-2 gap-2 rounded-full bg-muted p-1">
@@ -128,13 +156,13 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
             <div className="space-y-3 rounded-2xl border bg-card p-3">
               <p className="text-sm font-semibold">{t("customer")}</p>
               <div className="max-h-40 space-y-1 overflow-y-auto">
-                {customers.map((c) => (
+                {sortedCustomers.map((c) => (
                   <button key={c.id} type="button" onClick={() => setPartyId(c.id!)} className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors", partyId === c.id ? "bg-primary/15 font-semibold text-primary ring-1 ring-primary" : "hover:bg-muted")}>
-                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent font-bold text-accent-foreground">{c.name[0]?.toUpperCase()}</span>
+                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent font-bold text-accent-foreground">{c.name[0]?.toUpperCase() ?? "?"}</span>
                     <span className="truncate">{c.name}</span>
                   </button>
                 ))}
-                {customers.length === 0 && <p className="py-2 text-center text-xs text-muted-foreground">{t("noItems")}</p>}
+                {sortedCustomers.length === 0 && <p className="py-2 text-center text-xs text-muted-foreground">{t("noItems")}</p>}
               </div>
               {partyId === "new" ? (
                 <div className="space-y-2 rounded-xl bg-muted/60 p-3">
@@ -152,13 +180,13 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
             </div>
           )}
 
-          <button type="button" onClick={submit} className="flex h-14 w-full items-center justify-between rounded-full bg-primary px-6 text-primary-foreground">
+          <button type="button" onClick={submit} disabled={maxStock < 1} className="flex h-14 w-full items-center justify-between rounded-full bg-primary px-6 text-primary-foreground disabled:opacity-40">
             <span className="font-semibold">{t("complete")}</span>
             <span className="font-bold tabular-nums">{fmt(total)}</span>
           </button>
         </div>
-      </DrawerContent>
-    </Drawer>
+      </div>
+    </div>
   );
 }
 
@@ -169,22 +197,20 @@ export function ProductCard({ p, onOpen }: { p: Product; onOpen: () => void }) {
     <div className="flex flex-col rounded-2xl bg-card p-3 shadow-card">
       <button type="button" onClick={onOpen} className="text-left">
         <div className="relative grid aspect-[4/3] place-items-center rounded-xl bg-accent text-5xl">
-          {p.emoji}
-          <span className={cn("absolute left-2 top-2 max-w-[85%] truncate rounded-full px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]", p.stock === 0 ? "bg-destructive text-destructive-foreground" : low ? "bg-warning text-warning-foreground" : "bg-card text-foreground")}>
+          {p.emoji || "📦"}
+          <span className={cn("absolute left-2 top-2 max-w-[85%] truncate rounded-full px-2 py-0.5 text-[10px] font-semibold", p.stock === 0 ? "bg-destructive text-destructive-foreground" : low ? "bg-warning text-warning-foreground" : "bg-card text-foreground")}>
             {p.stock === 0 ? t("out") : `${p.stock} ${t("left")}${low ? ` · ${t("low")}` : ""}`}
           </span>
         </div>
-        <p className="mt-2 line-clamp-2 min-h-10 text-sm font-semibold leading-tight">{p.name}</p>
-      </button>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <p className="min-w-0 flex-1 text-base font-extrabold tabular-nums leading-tight text-foreground sm:text-lg">
-          {p.price.toLocaleString()}
-          <span className="ml-0.5 text-[10px] font-bold text-muted-foreground sm:text-xs"> RWF</span>
+        <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-tight">{p.name}</p>
+        <p className="mt-1 text-base font-extrabold tabular-nums leading-tight text-foreground">
+          {(p.price ?? 0).toLocaleString()}
+          <span className="ml-0.5 text-[10px] font-bold text-muted-foreground"> RWF</span>
         </p>
-        <button type="button" disabled={p.stock === 0} onClick={() => quickSell(p, t)} className="h-9 shrink-0 rounded-full bg-primary px-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-40">
-          {t("sell")}
-        </button>
-      </div>
+      </button>
+      <button type="button" disabled={p.stock === 0} onClick={() => quickSell(p, t)} className="mt-2 h-10 w-full rounded-full bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-40">
+        {t("sell")}
+      </button>
     </div>
   );
 }
