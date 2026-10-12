@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { PackagePlus, Pencil, Plus, Search } from "lucide-react";
+import { PackagePlus, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
-import { db, CATEGORIES, UNITS, type Product } from "@/lib/db";
-import { fmt, saveProduct, stockIn } from "@/lib/actions";
+import { db, CATEGORIES, PRODUCT_EMOJIS, UNITS, type Product } from "@/lib/db";
+import { deleteProduct, fmt, saveProduct, stockIn } from "@/lib/actions";
 import { useI18n } from "@/lib/i18n";
 import { CategoryPills } from "@/components/AppShell";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,6 @@ export const Route = createFileRoute("/stock")({
 });
 
 type Mode = { kind: "edit"; p?: Product } | { kind: "in"; p: Product } | null;
-const EMOJIS = ["📦", "🥛", "🍺", "🥤", "🌾", "🍚", "🍪", "🧼", "📱", "🫒", "🕯️", "🍞", "🥚", "🧃", "🧂"];
 
 function StockPage() {
   const { t } = useI18n();
@@ -90,11 +89,24 @@ function StockPage() {
                 <IconBtn label={t("edit")} onClick={() => setMode({ kind: "edit", p })}>
                   <Pencil className="size-4" />
                 </IconBtn>
+                <IconBtn
+                  label={t("deleteProduct")}
+                  onClick={() => {
+                    if (!confirm(t("confirmDelete"))) return;
+                    deleteProduct(p.id!)
+                      .then(() => toast.success(t("deleteProduct")))
+                      .catch((e) => toast.error(e.message));
+                  }}
+                >
+                  <Trash2 className="size-4 text-destructive" />
+                </IconBtn>
               </div>
             </li>
           );
         })}
-        {list.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
+        {list.length === 0 && (
+          <p className="py-10 text-center text-sm text-muted-foreground">{t("emptyShop")}</p>
+        )}
       </ul>
 
       <Drawer open={!!mode} onOpenChange={(o) => !o && setMode(null)}>
@@ -165,7 +177,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
       </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
-          {EMOJIS.map((e) => (
+          {PRODUCT_EMOJIS.map((e) => (
             <button key={e} type="button" onClick={() => setF({ ...f, emoji: e })} className={cn("grid size-11 shrink-0 place-items-center rounded-xl text-2xl", f.emoji === e ? "bg-primary/20 ring-2 ring-primary" : "bg-muted")}>
               {e}
             </button>
