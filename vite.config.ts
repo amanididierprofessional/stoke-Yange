@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Expose Supabase keys already set on Vercel (without requiring VITE_ prefix rename)
+  vite: {
+    envPrefix: ["VITE_", "SUPABASE_", "NEXT_PUBLIC_"],
+  },
 });

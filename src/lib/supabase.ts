@@ -1,20 +1,39 @@
 /**
  * Supabase client — offline-first POS with optional cloud sync + auth.
- * Project URL is fixed for this shop app. You only need to set:
- *   VITE_SUPABASE_ANON_KEY=your_publishable_anon_key
- * in .env (local) or Lovable environment variables.
- * Without the key the app still works fully offline via IndexedDB.
+ * Prefers VITE_SUPABASE_ANON_KEY (Vite client env).
+ * Also accepts SUPABASE_ANON_KEY / NEXT_PUBLIC_* if vite envPrefix includes them.
+ * Without a key the app still works fully offline via IndexedDB.
  */
 
 const DEFAULT_URL = "https://hdsoxtlruzuadsqkapls.supabase.co";
 
+function pickEnv(...names: string[]): string | undefined {
+  const env = import.meta.env as Record<string, string | undefined>;
+  for (const n of names) {
+    const v = env[n]?.trim();
+    if (v) return v;
+  }
+  return undefined;
+}
+
 const url =
-  (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || DEFAULT_URL;
-const key = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
+  pickEnv(
+    "VITE_SUPABASE_URL",
+    "SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_URL",
+  ) || DEFAULT_URL;
+
+const key = pickEnv(
+  "VITE_SUPABASE_ANON_KEY",
+  "SUPABASE_ANON_KEY",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "SUPABASE_PUBLISHABLE_KEY",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY",
+);
 
 export const supabaseConfigured = Boolean(url && key);
 
-// Lazy client so the app builds even if @supabase/supabase-js is not installed yet.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export let supabase: any = null;
 
