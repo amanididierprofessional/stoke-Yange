@@ -123,7 +123,7 @@ const dict = {
   syncNow: ["Sync to cloud now", "Ohereza kuri cloud"],
   synced: ["Synced to cloud", "Byoherejwe kuri cloud"],
   contactDev: ["Need help?", "Ukeneye ubufasha?"],
-  exportPdf: ["Export PDF report", "Sohora raporo (PDF)"],
+  exportPdf: ["Download report", "Kuramo raporo"],
   confirmDeleteTitle: ["Delete product?", "Siba igicuruzwa?"],
   confirmDeleteBody: ["This removes the product from stock. Past sales stay in history.", "Ibi bisiba igicuruzwa mu bubiko. Amateka y'igurisha asigala."],
   accountInfo: ["Your account", "Konti yawe"],
@@ -134,6 +134,7 @@ const dict = {
   resetFull: ["Clear app + cloud backup", "Siba amakuru y'app + cloud"],
   resetPhoneDone: ["App data cleared on this device", "Amakuru y'app yasibwe"],
   resetFullDone: ["App and cloud data cleared", "Amakuru y'app na cloud yasibwe"],
+  pleaseWait: ["Please wait…", "Tegereza…"],
 } as const;
 
 export type Key = keyof typeof dict;
