@@ -40,9 +40,13 @@ function HistoryPage() {
         const profit = live.reduce((a, s) => a + (s.unitPrice - s.unitCost) * s.qty, 0);
         return (
           <section key={day} className="space-y-2">
-            <div className="rounded-2xl bg-card p-4 shadow-card">
-              <p className="font-semibold">{day === todayKey ? t("today") : new Date(day).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}</p>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-2xl bg-card p-3 shadow-card sm:p-4">
+              <p className="font-semibold text-sm sm:text-base">
+                {day === todayKey
+                  ? t("today")
+                  : new Date(day).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
+              </p>
+              <div className="mt-2 grid grid-cols-3 gap-1.5 sm:gap-2">
                 <Stat label={t("cashCollected")} v={fmt(cash)} cls="text-success" />
                 <Stat label={t("creditGiven")} v={fmt(credit)} cls="text-primary" />
                 <Stat label={t("profit")} v={fmt(profit)} cls="text-foreground" />
@@ -52,23 +56,31 @@ function HistoryPage() {
               {list.map((s) => {
                 const canUndo = !s.reversed && Date.now() - s.createdAt < UNDO_WINDOW_MS;
                 return (
-                  <li key={s.id} className={cn("flex items-center gap-3 rounded-2xl bg-card px-3 py-2.5", s.reversed && "opacity-50")}>
+                  <li key={s.id} className={cn("flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5 sm:gap-3", s.reversed && "opacity-50")}>
                     <div className="min-w-0 flex-1">
-                      <p className={cn("truncate text-sm font-medium", s.reversed && "line-through")}>{s.qty} × {s.productName}</p>
+                      <p className={cn("truncate text-sm font-medium", s.reversed && "line-through")}>
+                        {s.qty} × {s.productName}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(s.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                         {s.partyId && ` · ${parties.find((p) => p.id === s.partyId)?.name ?? ""}`}
                       </p>
                     </div>
-                    <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", s.reversed ? "bg-muted" : s.type === "cash" ? "bg-success/15 text-success" : "bg-primary/15 text-primary")}>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]",
+                        s.reversed ? "bg-muted" : s.type === "cash" ? "bg-success/15 text-success" : "bg-primary/15 text-primary",
+                      )}
+                    >
                       {s.reversed ? t("reversed") : s.type === "cash" ? t("cash") : t("creditIdeni")}
                     </span>
-                    <span className="w-24 text-right text-sm font-semibold tabular-nums">{fmt(s.total)}</span>
+                    <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums sm:w-24 sm:text-sm">{fmt(s.total)}</span>
                     {canUndo && (
                       <button
+                        type="button"
                         aria-label={t("undo")}
                         onClick={() => reverseSale(s.id!).then(() => toast(t("reversed"))).catch((e) => toast.error(e.message))}
-                        className="grid size-9 place-items-center rounded-full border"
+                        className="grid size-9 shrink-0 place-items-center rounded-full border"
                       >
                         <Undo2 className="size-4" />
                       </button>
@@ -87,9 +99,9 @@ function HistoryPage() {
 
 function Stat({ label, v, cls }: { label: string; v: string; cls: string }) {
   return (
-    <div className="rounded-xl bg-muted p-2">
-      <p className="text-[10px] text-muted-foreground">{label}</p>
-      <p className={cn("text-sm font-bold tabular-nums", cls)}>{v}</p>
+    <div className="rounded-xl bg-muted px-2 py-2 text-center sm:p-2">
+      <p className="text-[10px] leading-tight text-muted-foreground sm:text-[10px]">{label}</p>
+      <p className={cn("mt-0.5 text-sm font-bold tabular-nums sm:text-sm", cls)}>{v}</p>
     </div>
   );
 }
