@@ -148,7 +148,7 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const save = async () => {
     const n = Number(amt) || 0;
-    if (n <= 0) return toast.error(t("amount"));
+    if (n <= 0) { toast.error(t("amount")); return; }
     const d = new Date(date);
     const now = new Date();
     d.setHours(now.getHours(), now.getMinutes());
@@ -181,7 +181,7 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
   const [desc, setDesc] = useState("");
   const [amt, setAmt] = useState("");
   const save = async () => {
-    if (!name.trim()) return toast.error(t("name"));
+    if (!name.trim()) { toast.error(t("name")); return; }
     const id = await addParty(name, phone, kind);
     if (Number(amt) > 0) await addDebt(id, desc || "—", Number(amt));
     onDone();

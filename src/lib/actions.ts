@@ -15,8 +15,8 @@ export async function recordSale(opts: {
   qty: number;
   unitPrice: number;
   type: SaleType;
-  partyId?: number;
-  dueDays?: number;
+  partyId?: number | undefined;
+  dueDays?: number | undefined;
 }) {
   const now = Date.now();
   return db.transaction("rw", [db.products, db.sales, db.movements, db.debts, db.outbox], async () => {

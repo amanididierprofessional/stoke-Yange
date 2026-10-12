@@ -22,7 +22,7 @@ export type Sale = {
   unitCost: number;
   total: number;
   type: SaleType;
-  partyId?: number;
+  partyId?: number | undefined;
   createdAt: number;
   reversed?: 0 | 1;
 };

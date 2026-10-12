@@ -52,10 +52,10 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
       let pid: number | undefined;
       if (type === "credit") {
         if (partyId === "new") {
-          if (!newName.trim()) return toast.error(t("name"));
+          if (!newName.trim()) { toast.error(t("name")); return; }
           pid = await addParty(newName, newPhone, "customer");
         } else if (partyId) pid = partyId;
-        else return toast.error(t("customer"));
+        else { toast.error(t("customer")); return; }
       }
       const id = await recordSale({ productId: product.id!, qty, unitPrice: unit, type, partyId: pid, dueDays });
       toast.success(`${t("sold")}: ${qty} × ${product.name}`, {

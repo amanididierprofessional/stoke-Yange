@@ -115,7 +115,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const num = (v: string) => Number(v.replace(/[^\d.]/g, "")) || 0;
 
-function ProductForm({ p, cats, onDone }: { p?: Product; cats: string[]; onDone: () => void }) {
+function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: string[]; onDone: () => void }) {
   const { t } = useI18n();
   const [f, setF] = useState({
     name: p?.name ?? "", category: p?.category ?? cats[0]!, unit: p?.unit ?? "pcs", emoji: p?.emoji ?? "📦",
@@ -123,7 +123,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product; cats: string[]; onDone:
   });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const save = async () => {
-    if (!f.name.trim()) return toast.error(t("name"));
+    if (!f.name.trim()) { toast.error(t("name")); return; }
     const data = { name: f.name.trim(), category: f.category, unit: f.unit, emoji: f.emoji, cost: num(f.cost), price: num(f.price), min: num(f.min), stock: p ? p.stock : num(f.stock) };
     await saveProduct(p?.id ? { ...data, id: p.id } : data);
     toast.success(t("save"));
