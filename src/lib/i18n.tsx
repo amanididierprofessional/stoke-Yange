@@ -11,7 +11,7 @@ const dict = {
   all: ["All", "Byose"],
   search: ["Search products…", "Shakisha igicuruzwa…"],
   left: ["left", "bisigaye"],
-  low: ["Low!", "Bike!"],
+  low: ["Low!", "Ibike!"],
   out: ["Out", "Byashize"],
   stockValue: ["Inventory value (cost)", "Agaciro k'ububiko (ikiguzi)"],
   salesValue: ["Potential sales value", "Agaciro ko kugurisha"],
@@ -123,6 +123,11 @@ const dict = {
   syncNow: ["Sync to cloud now", "Ohereza kuri cloud"],
   synced: ["Synced to cloud", "Byoherejwe kuri cloud"],
   contactDev: ["Need help?", "Ukeneye ubufasha?"],
+  exportPdf: ["Export PDF report", "Sohora raporo (PDF)"],
+  confirmDeleteTitle: ["Delete product?", "Siba igicuruzwa?"],
+  confirmDeleteBody: ["This removes the product from stock. Past sales stay in history.", "Ibi bisiba igicuruzwa mu bubiko. Amateka y'igurisha asigala."],
+  accountInfo: ["Your account", "Konti yawe"],
+  notSyncedHint: ["Data syncs automatically when you are online.", "Amakuru ajya kuri cloud automatic iyo ufite murandasi."],
 } as const;
 
 export type Key = keyof typeof dict;
