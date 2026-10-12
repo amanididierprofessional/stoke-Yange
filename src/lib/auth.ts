@@ -1,11 +1,11 @@
 /**
- * Local-first shop accounts (phone or email + password).
- * Mirrors to Supabase Auth when configured.
- * Recovery uses name + business + age.
+ * Auth: local (IndexedDB) for offline + Supabase Auth for cloud verify.
+ * Sign-in tries Supabase first when online; falls back to local hash offline.
+ * Passwords live in auth.users only — NEVER in profiles.
  */
 import { db, factoryReset } from "./db";
-import { supabase, supabaseConfigured } from "./supabase";
-import { trySync } from "./sync";
+import { ensureSupabase, supabase, supabaseConfigured } from "./supabase";
+import { pullFromCloud, trySync } from "./sync";
 
 export type Account = {
   loginType: "phone" | "email";
@@ -15,6 +15,7 @@ export type Account = {
   businessName: string;
   age: string;
   createdAt: number;
+  supabaseUserId?: string;
 };
 
 const KEY = "account";
@@ -68,6 +69,30 @@ async function saveAccount(a: Account) {
   await db.outbox.add({ op: "profile", createdAt: Date.now() });
 }
 
+async function applyProfileFromCloud(
+  account: Account,
+  userId: string,
+  email: string | undefined,
+) {
+  const client = await ensureSupabase();
+  if (!client) return account;
+  try {
+    const { data } = await client.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (data) {
+      if (data.full_name) account.fullName = data.full_name;
+      if (data.shop_name) account.businessName = data.shop_name;
+      if (data.age) account.age = String(data.age);
+      if (data.phone && account.loginType === "phone") account.identifier = normalizePhone(data.phone);
+    }
+  } catch (e) {
+    console.warn("[auth] load profile", e);
+  }
+  account.supabaseUserId = userId;
+  if (email && account.loginType === "email") account.identifier = email.toLowerCase();
+  await saveAccount(account);
+  return account;
+}
+
 export async function signUp(opts: {
   loginType: "phone" | "email";
   identifier: string;
@@ -81,9 +106,6 @@ export async function signUp(opts: {
   if (opts.password.length < 4) return { ok: false, error: "password" };
   if (!opts.fullName.trim() || !opts.businessName.trim()) return { ok: false, error: "profile" };
 
-  const existing = await getAccount();
-  if (existing) return { ok: false, error: "exists" };
-
   const passwordHash = await sha256(opts.password);
   const account: Account = {
     loginType: opts.loginType,
@@ -94,13 +116,12 @@ export async function signUp(opts: {
     age: String(opts.age).trim(),
     createdAt: Date.now(),
   };
-  await saveAccount(account);
-  setLoggedIn(true);
 
-  if (supabaseConfigured && supabase) {
+  const client = await ensureSupabase();
+  if (supabaseConfigured && client && navigator.onLine) {
     try {
       const email = opts.loginType === "email" ? id : syntheticEmail(id);
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await client.auth.signUp({
         email,
         password: opts.password,
         options: {
@@ -112,33 +133,51 @@ export async function signUp(opts: {
           },
         },
       });
-      if (error && !/already/i.test(error.message)) {
-        console.warn("[auth] supabase signup", error.message);
-      }
-      await supabase.auth.signInWithPassword({ email, password: opts.password }).catch(() => {});
-      try {
-        const { data: sess } = await supabase.auth.getSession();
-        const uid = sess.session?.user?.id;
-        if (uid) {
-          await supabase.from("profiles").upsert({
-            id: uid,
-            shop_name: account.businessName,
-            full_name: account.fullName,
-            phone: opts.loginType === "phone" ? id : "",
-            age: account.age,
-            email: opts.loginType === "email" ? id : email,
-            updated_at: new Date().toISOString(),
-          });
+      if (error) {
+        // User already in Auth → try sign-in instead
+        if (/already|registered|exists/i.test(error.message)) {
+          return { ok: false, error: "exists" };
         }
-      } catch (e) {
-        console.warn("[auth] profile upsert", e);
+        console.warn("[auth] signup", error.message);
+        return { ok: false, error: error.message };
       }
-      trySync().catch(() => {});
+      // Ensure session (if confirm-email is off)
+      if (!data.session) {
+        const sign = await client.auth.signInWithPassword({ email, password: opts.password });
+        if (sign.error) {
+          // Account created but needs email confirm — still save local so offline works
+          console.warn("[auth] post-signup signin", sign.error.message);
+        }
+      }
+      const { data: sess } = await client.auth.getSession();
+      const uid = sess.session?.user?.id;
+      if (uid) {
+        account.supabaseUserId = uid;
+        const { error: pe } = await client.from("profiles").upsert({
+          id: uid,
+          shop_name: account.businessName,
+          full_name: account.fullName,
+          phone: opts.loginType === "phone" ? id : "",
+          age: account.age,
+          email: opts.loginType === "email" ? id : email,
+          updated_at: new Date().toISOString(),
+        });
+        if (pe) console.warn("[auth] profile upsert", pe.message);
+      }
     } catch (e) {
-      console.warn("[auth] cloud signup skipped", e);
+      console.warn("[auth] cloud signup", e);
     }
   }
 
+  // Local always saved so offline works
+  const existing = await getAccount();
+  if (existing && existing.identifier !== id) {
+    // Different user on this device — wipe shop data first
+    await factoryReset(false);
+  }
+  await saveAccount(account);
+  setLoggedIn(true);
+  trySync().catch(() => {});
   return { ok: true };
 }
 
@@ -148,9 +187,47 @@ export async function signIn(opts: {
   password: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const id = normalizeId(opts.loginType, opts.identifier);
+  if (!id || opts.password.length < 4) return { ok: false, error: "bad_password" };
+
+  const client = await ensureSupabase();
+  const email = opts.loginType === "email" ? id : syntheticEmail(id);
+
+  // 1) Prefer Supabase Auth when online + configured
+  if (supabaseConfigured && client && navigator.onLine) {
+    const { data, error } = await client.auth.signInWithPassword({ email, password: opts.password });
+    if (error) {
+      // Invalid login credentials from cloud
+      if (/invalid|credentials|password/i.test(error.message)) {
+        // Fall through to local check (may still work offline-created account)
+      } else {
+        console.warn("[auth] cloud signin", error.message);
+      }
+    }
+    if (data?.session?.user) {
+      const uid = data.session.user.id;
+      const passwordHash = await sha256(opts.password);
+      let account: Account = {
+        loginType: opts.loginType,
+        identifier: id,
+        passwordHash,
+        fullName: "",
+        businessName: "Iduka Ryanjye",
+        age: "",
+        createdAt: Date.now(),
+        supabaseUserId: uid,
+      };
+      account = await applyProfileFromCloud(account, uid, data.session.user.email);
+      setLoggedIn(true);
+      // Restore shop data from cloud if local is empty
+      await pullFromCloud().catch((e) => console.warn("[auth] pull", e));
+      trySync().catch(() => {});
+      return { ok: true };
+    }
+  }
+
+  // 2) Local fallback (offline or cloud failed)
   const account = await getAccount();
   if (!account) return { ok: false, error: "no_account" };
-
   if (account.loginType !== opts.loginType || account.identifier !== id) {
     return { ok: false, error: "mismatch" };
   }
@@ -158,11 +235,9 @@ export async function signIn(opts: {
   if (hash !== account.passwordHash) return { ok: false, error: "bad_password" };
 
   setLoggedIn(true);
-
-  if (supabaseConfigured && supabase) {
+  if (supabaseConfigured && client && navigator.onLine) {
     try {
-      const email = opts.loginType === "email" ? id : syntheticEmail(id);
-      await supabase.auth.signInWithPassword({ email, password: opts.password });
+      await client.auth.signInWithPassword({ email, password: opts.password });
       trySync().catch(() => {});
     } catch {
       /* offline ok */
@@ -190,25 +265,23 @@ export async function recoverPassword(opts: {
   await saveAccount(account);
   setLoggedIn(true);
 
-  if (supabaseConfigured && supabase) {
+  const client = await ensureSupabase();
+  if (client) {
     try {
-      await supabase.auth.updateUser({ password: opts.newPassword });
+      await client.auth.updateUser({ password: opts.newPassword });
     } catch {
-      /* ignore */
+      /* may need re-login */
     }
   }
   return { ok: true };
 }
 
-/** Clear session flag only (no DB wipe). */
 export function clearSessionOnly() {
   setLoggedIn(false);
 }
 
-/** Log out: clear session + local account + all app data on this device. Cloud stays. */
 export async function signOutLocal() {
   setLoggedIn(false);
-  // Fire-and-forget cloud sign-out so UI is not blocked
   if (supabase) {
     void supabase.auth.signOut().catch(() => {});
   }
@@ -217,9 +290,6 @@ export async function signOutLocal() {
   await db.settings.delete("shopName");
 }
 
-/**
- * Wipe cloud rows for current user — parallel deletes + hard timeout so phone never hangs.
- */
 export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }> {
   if (!supabaseConfigured || !supabase) return { ok: false, reason: "not_configured" };
   if (!navigator.onLine) return { ok: false, reason: "offline" };
@@ -245,7 +315,6 @@ export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }>
     }
   };
 
-  // Never block the phone more than 6s on cloud wipe
   return Promise.race([
     run(),
     new Promise<{ ok: boolean; reason?: string }>((resolve) =>

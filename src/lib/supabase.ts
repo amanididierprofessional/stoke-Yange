@@ -1,9 +1,8 @@
 /**
- * Supabase client — offline-first POS with optional cloud sync + auth.
- * Prefers VITE_SUPABASE_ANON_KEY (Vite client env).
- * Also accepts SUPABASE_ANON_KEY / NEXT_PUBLIC_* if vite envPrefix includes them.
- * Without a key the app still works fully offline via IndexedDB.
+ * Supabase client — MUST be ready before auth/sync.
+ * Uses static import so client exists immediately (not a delayed dynamic import).
  */
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const DEFAULT_URL = "https://hdsoxtlruzuadsqkapls.supabase.co";
 
@@ -17,11 +16,7 @@ function pickEnv(...names: string[]): string | undefined {
 }
 
 const url =
-  pickEnv(
-    "VITE_SUPABASE_URL",
-    "SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_URL",
-  ) || DEFAULT_URL;
+  pickEnv("VITE_SUPABASE_URL", "SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL") || DEFAULT_URL;
 
 const key = pickEnv(
   "VITE_SUPABASE_ANON_KEY",
@@ -34,21 +29,17 @@ const key = pickEnv(
 
 export const supabaseConfigured = Boolean(url && key);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export let supabase: any = null;
-
-if (supabaseConfigured && typeof window !== "undefined") {
-  import("@supabase/supabase-js")
-    .then(({ createClient }) => {
-      supabase = createClient(url, key!, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-        },
-      });
+export const supabase: SupabaseClient | null = supabaseConfigured
+  ? createClient(url, key!, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
     })
-    .catch((e) => {
-      console.warn("[supabase] package not available", e);
-    });
+  : null;
+
+/** Always resolves; use before auth/sync so we never hit a null client race. */
+export async function ensureSupabase(): Promise<SupabaseClient | null> {
+  return supabase;
 }
