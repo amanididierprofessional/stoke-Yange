@@ -71,7 +71,7 @@ const dict = {
   deleteProduct: ["Delete product", "Siba igicuruzwa"],
   confirmDelete: ["Delete this product type? Past sales stay in history.", "Siba iki gicuruzwa? Amakuru y'ubucuruzi asigala."],
   emptyShop: ["No products yet. Tap + to add your first real item.", "Nta bicuruzwa. Kanda + wongereho igicuruzwa cyawe."],
-  reset: ["Factory reset (empty)", "Siba byose"],
+  reset: ["Delete data…", "Siba amakuru…"],
   confirmReset: ["This deletes all data on this phone. Continue?", "Ibi bisiba amakuru yose. Ukomeze?"],
   addParty: ["Add person", "Ongeraho umuntu"],
   addDebtLbl: ["Add debt", "Ongeraho ideni"],
@@ -119,7 +119,7 @@ const dict = {
   selectedTotal: ["Selected sales total", "Igiteranyo cyatoranyijwe"],
   itemsSelected: ["items selected", "byatoranyijwe"],
   logout: ["Log out", "Sohoka"],
-  signedOut: ["Logged out", "Wasohotse"],
+  signedOut: ["Logged out — data cleared on this phone", "Wasohotse — amakuru yasibwe kuri telefone"],
   syncNow: ["Sync to cloud now", "Ohereza kuri cloud"],
   synced: ["Synced to cloud", "Byoherejwe kuri cloud"],
   contactDev: ["Need help?", "Ukeneye ubufasha?"],
@@ -128,6 +128,12 @@ const dict = {
   confirmDeleteBody: ["This removes the product from stock. Past sales stay in history.", "Ibi bisiba igicuruzwa mu bubiko. Amateka y'igurisha asigala."],
   accountInfo: ["Your account", "Konti yawe"],
   notSyncedHint: ["Data syncs automatically when you are online.", "Amakuru ajya kuri cloud automatic iyo ufite murandasi."],
+  resetTitle: ["Delete shop data?", "Siba amakuru y'iduka?"],
+  resetBody: ["Choose carefully. Phone-only keeps your cloud backup. Full delete removes data on this phone and in the cloud.", "Hitamo neza. Telefone gusa isiga kopi kuri cloud. Gusiba byose bisiba kuri telefone no kuri cloud."],
+  resetPhoneOnly: ["Reset this phone only", "Siba kuri telefone gusa"],
+  resetFull: ["Full delete (phone + cloud)", "Siba byose (telefone + cloud)"],
+  resetPhoneDone: ["Phone data cleared", "Amakuru ya telefone yasibwe"],
+  resetFullDone: ["Phone and cloud data deleted", "Amakuru ya telefone na cloud yasibwe"],
 } as const;
 
 export type Key = keyof typeof dict;
