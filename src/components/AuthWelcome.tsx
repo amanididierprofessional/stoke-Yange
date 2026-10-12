@@ -31,6 +31,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const [age, setAge] = useState("");
   const [busy, setBusy] = useState(false);
   const [welcome, setWelcome] = useState(false);
+  const [recoverFailed, setRecoverFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,8 +149,10 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     setBusy(false);
     if (!res.ok) {
       toast.error(t("verifyFail"));
+      setRecoverFailed(true);
       return;
     }
+    setRecoverFailed(false);
     setWelcome(true);
     setTimeout(() => {
       setOpen(false);
@@ -207,7 +210,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
                     <button type="button" className="text-muted-foreground" onClick={async () => {
                       const a = await getAccount();
                       if (!a) { toast.message(t("needSignUp")); setMode("signup"); return; }
-                      setMode("recover"); setStep(2); setPassword("");
+                      setMode("recover"); setStep(2); setPassword(""); setRecoverFailed(false);
                     }}>{t("forgotPassword")}</button>
                   </>
                 ) : (
@@ -229,7 +232,15 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
                 {t("submit")}
               </button>
               {mode === "recover" && (
-                <button type="button" className="w-full text-xs text-muted-foreground" onClick={() => { setMode("login"); setStep(1); }}>{t("signIn")}</button>
+                <button type="button" className="w-full text-xs text-muted-foreground" onClick={() => { setMode("login"); setStep(1); setRecoverFailed(false); }}>{t("signIn")}</button>
+              )}
+              {recoverFailed && (
+                <p className="pt-1 text-center text-[11px] text-muted-foreground">
+                  {t("contactDev")}{" "}
+                  <a href="tel:0796919900" className="underline">0796919900</a>
+                  {" · "}
+                  <a href="https://wa.me/250796919900" target="_blank" rel="noreferrer" className="underline">WhatsApp</a>
+                </p>
               )}
             </div>
           )}
