@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { ClipboardCheck, PackagePlus, Pencil, Plus, Search } from "lucide-react";
+import { PackagePlus, Pencil, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { db, CATEGORIES, UNITS, type Product } from "@/lib/db";
-import { adjustCount, fmt, saveProduct, stockIn } from "@/lib/actions";
+import { fmt, saveProduct, stockIn } from "@/lib/actions";
 import { useI18n } from "@/lib/i18n";
 import { CategoryPills } from "@/components/AppShell";
 import { cn } from "@/lib/utils";
@@ -24,7 +24,7 @@ export const Route = createFileRoute("/stock")({
   component: StockPage,
 });
 
-type Mode = { kind: "edit"; p?: Product } | { kind: "in"; p: Product } | { kind: "count"; p: Product } | null;
+type Mode = { kind: "edit"; p?: Product } | { kind: "in"; p: Product } | null;
 const EMOJIS = ["📦", "🥛", "🍺", "🥤", "🌾", "🍚", "🍪", "🧼", "📱", "🫒", "🕯️", "🍞", "🥚", "🧃", "🧂"];
 
 function StockPage() {
@@ -39,25 +39,32 @@ function StockPage() {
   const list = products.filter(
     (p) => (cat === "__all" || p.category === cat) && (!low || p.stock <= p.min) && p.name.toLowerCase().includes(q.toLowerCase()),
   );
-  const total = list.reduce((a, p) => a + p.stock * p.cost, 0);
+  const allCost = products.reduce((a, p) => a + p.stock * p.cost, 0);
+  const allSale = products.reduce((a, p) => a + p.stock * p.price, 0);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">{t("stock")}</h2>
-          <p className="text-sm text-muted-foreground">{list.length} · {fmt(total)}</p>
-        </div>
-        <button onClick={() => setMode({ kind: "edit" })} className="flex h-11 items-center gap-1 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
+      <section className="rounded-3xl bg-hero p-5 text-primary-foreground shadow-card">
+        <p className="text-xs font-medium opacity-90">{t("stockValue")}</p>
+        <p className="text-3xl font-bold tabular-nums tracking-tight">{fmt(allCost)}</p>
+        <p className="mt-1 text-xs opacity-90">
+          {t("salesValue")}: <b>{fmt(allSale)}</b> · {products.length} {t("stock").toLowerCase()}
+        </p>
+      </section>
+
+      <div className="flex items-end justify-between gap-2">
+        <h2 className="text-2xl font-bold">{t("stock")}</h2>
+        <button type="button" onClick={() => setMode({ kind: "edit" })} className="flex h-11 items-center gap-1 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
           <Plus className="size-4" /> {t("addProduct")}
         </button>
       </div>
+
       <div className="relative">
         <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("search")} className="h-12 w-full rounded-full border bg-card pl-11 pr-4 text-sm outline-none" />
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={() => nav({ search: low ? {} : { low: true } })} className={cn("h-9 shrink-0 rounded-full px-4 text-sm font-medium", low ? "bg-warning text-warning-foreground" : "border bg-card")}>
+        <button type="button" onClick={() => nav({ search: low ? {} : { low: true } })} className={cn("h-9 shrink-0 rounded-full px-4 text-sm font-medium", low ? "bg-warning text-warning-foreground" : "border bg-card")}>
           ⚠ {t("low")}
         </button>
       </div>
@@ -71,13 +78,18 @@ function StockPage() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{p.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  <span className={cn("font-semibold", isLow ? "text-destructive" : "text-foreground")}>{p.stock} {p.unit}</span> · min {p.min} · {fmt(p.price)}
+                  <span className={cn("font-semibold", isLow ? "text-destructive" : "text-foreground")}>
+                    {p.stock} {p.unit}
+                  </span>{" "}· min {p.min} · {fmt(p.price)}
                 </p>
               </div>
               <div className="flex gap-1">
-                <IconBtn label={t("stockIn")} onClick={() => setMode({ kind: "in", p })}><PackagePlus className="size-4" /></IconBtn>
-                <IconBtn label={t("count")} onClick={() => setMode({ kind: "count", p })}><ClipboardCheck className="size-4" /></IconBtn>
-                <IconBtn label={t("edit")} onClick={() => setMode({ kind: "edit", p })}><Pencil className="size-4" /></IconBtn>
+                <IconBtn label={t("stockIn")} onClick={() => setMode({ kind: "in", p })}>
+                  <PackagePlus className="size-4" />
+                </IconBtn>
+                <IconBtn label={t("edit")} onClick={() => setMode({ kind: "edit", p })}>
+                  <Pencil className="size-4" />
+                </IconBtn>
               </div>
             </li>
           );
@@ -89,7 +101,6 @@ function StockPage() {
         <DrawerContent className="mx-auto max-h-[92vh] max-w-md">
           {mode?.kind === "edit" && <ProductForm p={mode.p} cats={cats} onDone={() => setMode(null)} />}
           {mode?.kind === "in" && <StockInForm p={mode.p} onDone={() => setMode(null)} />}
-          {mode?.kind === "count" && <CountForm p={mode.p} onDone={() => setMode(null)} />}
         </DrawerContent>
       </Drawer>
     </div>
@@ -98,7 +109,7 @@ function StockPage() {
 
 function IconBtn({ children, label, onClick }: { children: React.ReactNode; label: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} aria-label={label} title={label} className="grid size-10 place-items-center rounded-full border bg-background">
+    <button type="button" onClick={onClick} aria-label={label} title={label} className="grid size-10 place-items-center rounded-full border bg-background">
       {children}
     </button>
   );
@@ -118,41 +129,77 @@ const num = (v: string) => Number(v.replace(/[^\d.]/g, "")) || 0;
 function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: string[]; onDone: () => void }) {
   const { t } = useI18n();
   const [f, setF] = useState({
-    name: p?.name ?? "", category: p?.category ?? cats[0]!, unit: p?.unit ?? "pcs", emoji: p?.emoji ?? "📦",
-    cost: String(p?.cost ?? ""), price: String(p?.price ?? ""), stock: String(p?.stock ?? ""), min: String(p?.min ?? "3"),
+    name: p?.name ?? "",
+    category: p?.category ?? cats[0]!,
+    unit: p?.unit ?? "pcs",
+    emoji: p?.emoji ?? "📦",
+    cost: String(p?.cost ?? ""),
+    price: String(p?.price ?? ""),
+    stock: String(p?.stock ?? ""),
+    min: String(p?.min ?? "3"),
   });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const save = async () => {
-    if (!f.name.trim()) { toast.error(t("name")); return; }
-    const data = { name: f.name.trim(), category: f.category, unit: f.unit, emoji: f.emoji, cost: num(f.cost), price: num(f.price), min: num(f.min), stock: p ? p.stock : num(f.stock) };
+    if (!f.name.trim()) {
+      toast.error(t("name"));
+      return;
+    }
+    const data = {
+      name: f.name.trim(),
+      category: f.category,
+      unit: f.unit,
+      emoji: f.emoji,
+      cost: num(f.cost),
+      price: num(f.price),
+      min: num(f.min),
+      stock: p ? p.stock : num(f.stock),
+    };
     await saveProduct(p?.id ? { ...data, id: p.id } : data);
     toast.success(t("save"));
     onDone();
   };
   return (
     <div className="overflow-y-auto">
-      <DrawerHeader><DrawerTitle>{p ? t("edit") : t("addProduct")}</DrawerTitle></DrawerHeader>
+      <DrawerHeader>
+        <DrawerTitle>{p ? t("edit") : t("addProduct")}</DrawerTitle>
+      </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
           {EMOJIS.map((e) => (
-            <button key={e} onClick={() => setF({ ...f, emoji: e })} className={cn("grid size-11 shrink-0 place-items-center rounded-xl text-2xl", f.emoji === e ? "bg-primary/20 ring-2 ring-primary" : "bg-muted")}>{e}</button>
+            <button key={e} type="button" onClick={() => setF({ ...f, emoji: e })} className={cn("grid size-11 shrink-0 place-items-center rounded-xl text-2xl", f.emoji === e ? "bg-primary/20 ring-2 ring-primary" : "bg-muted")}>
+              {e}
+            </button>
           ))}
         </div>
-        <Field label={t("name")}><Input value={f.name} onChange={set("name")} className="h-11 rounded-xl" /></Field>
+        <Field label={t("name")}>
+          <Input value={f.name} onChange={set("name")} className="h-11 rounded-xl" />
+        </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label={t("category")}>
             <input list="cats" value={f.category} onChange={set("category")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm" />
-            <datalist id="cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
+            <datalist id="cats">{cats.map((c) => (<option key={c} value={c} />))}</datalist>
           </Field>
           <Field label={t("unit")}>
-            <select value={f.unit} onChange={set("unit")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">{UNITS.map((u) => <option key={u}>{u}</option>)}</select>
+            <select value={f.unit} onChange={set("unit")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">{UNITS.map((u) => (<option key={u}>{u}</option>))}</select>
           </Field>
-          <Field label={t("cost")}><Input inputMode="numeric" value={f.cost} onChange={set("cost")} className="h-11 rounded-xl" /></Field>
-          <Field label={t("sellPrice")}><Input inputMode="numeric" value={f.price} onChange={set("price")} className="h-11 rounded-xl" /></Field>
-          {!p && <Field label={t("openingStock")}><Input inputMode="numeric" value={f.stock} onChange={set("stock")} className="h-11 rounded-xl" /></Field>}
-          <Field label={t("minAlert")}><Input inputMode="numeric" value={f.min} onChange={set("min")} className="h-11 rounded-xl" /></Field>
+          <Field label={t("cost")}>
+            <Input inputMode="numeric" value={f.cost} onChange={set("cost")} className="h-11 rounded-xl" />
+          </Field>
+          <Field label={t("sellPrice")}>
+            <Input inputMode="numeric" value={f.price} onChange={set("price")} className="h-11 rounded-xl" />
+          </Field>
+          {!p && (
+            <Field label={t("openingStock")}>
+              <Input inputMode="numeric" value={f.stock} onChange={set("stock")} className="h-11 rounded-xl" />
+            </Field>
+          )}
+          <Field label={t("minAlert")}>
+            <Input inputMode="numeric" value={f.min} onChange={set("min")} className="h-11 rounded-xl" />
+          </Field>
         </div>
-        <button onClick={save} className="h-13 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
+        <button type="button" onClick={save} className="h-13 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
+          {t("save")}
+        </button>
       </div>
     </div>
   );
@@ -162,57 +209,53 @@ function StockInForm({ p, onDone }: { p: Product; onDone: () => void }) {
   const { t } = useI18n();
   const [qty, setQty] = useState("");
   const [cost, setCost] = useState(String(p.cost));
-  const [sup, setSup] = useState("");
+  const [sup, setSup] = useState<number | "">("");
   const suppliers = useLiveQuery(() => db.parties.where("kind").equals("supplier").toArray(), []) ?? [];
   const save = async () => {
     try {
-      await stockIn(p.id!, num(qty), num(cost), sup ? Number(sup) : undefined);
+      await stockIn(p.id!, num(qty), num(cost), sup === "" ? undefined : sup);
       toast.success(`+${num(qty)} ${p.name}`);
       onDone();
-    } catch { toast.error(t("quantity")); }
+    } catch {
+      toast.error(t("quantity"));
+    }
   };
   return (
-    <div>
-      <DrawerHeader><DrawerTitle>{t("stockIn")}: {p.emoji} {p.name}</DrawerTitle></DrawerHeader>
+    <div className="overflow-y-auto">
+      <DrawerHeader>
+        <DrawerTitle>
+          {t("stockIn")}: {p.emoji} {p.name}
+        </DrawerTitle>
+      </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
         <div className="grid grid-cols-2 gap-2">
-          <Field label={t("quantity")}><Input autoFocus inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="h-12 rounded-xl text-lg" /></Field>
-          <Field label={t("cost")}><Input inputMode="numeric" value={cost} onChange={(e) => setCost(e.target.value)} className="h-12 rounded-xl text-lg" /></Field>
+          <Field label={t("quantity")}>
+            <Input autoFocus inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="h-12 rounded-xl text-lg" />
+          </Field>
+          <Field label={t("cost")}>
+            <Input inputMode="numeric" value={cost} onChange={(e) => setCost(e.target.value)} className="h-12 rounded-xl text-lg" />
+          </Field>
         </div>
-        <Field label={t("fromSupplier")}>
-          <select value={sup} onChange={(e) => setSup(e.target.value)} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">
-            <option value="">{t("none")}</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </Field>
-        <p className="text-sm text-muted-foreground">{t("total")}: <b className="text-foreground">{fmt(num(qty) * num(cost))}</b></p>
-        <button onClick={save} className="w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
-      </div>
-    </div>
-  );
-}
-
-function CountForm({ p, onDone }: { p: Product; onDone: () => void }) {
-  const { t } = useI18n();
-  const [c, setC] = useState(String(p.stock));
-  const diff = num(c) - p.stock;
-  const save = async () => {
-    await adjustCount(p.id!, num(c));
-    toast.success(t("save"));
-    onDone();
-  };
-  return (
-    <div>
-      <DrawerHeader><DrawerTitle>{t("count")}: {p.emoji} {p.name}</DrawerTitle></DrawerHeader>
-      <div className="space-y-3 px-4 pb-6">
-        <p className="text-sm">{t("system")}: <b>{p.stock} {p.unit}</b></p>
-        <Field label={t("counted")}><Input autoFocus inputMode="numeric" value={c} onChange={(e) => setC(e.target.value)} className="h-12 rounded-xl text-lg" /></Field>
-        {diff !== 0 && (
-          <p className={cn("text-sm font-semibold", diff < 0 ? "text-destructive" : "text-success")}>
-            {diff > 0 ? "+" : ""}{diff} {p.unit} ({fmt(diff * p.cost)})
-          </p>
-        )}
-        <button onClick={save} className="w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">{t("fromSupplier")}</p>
+          <div className="max-h-36 space-y-1 overflow-y-auto rounded-xl border bg-card p-2">
+            <button type="button" onClick={() => setSup("")} className={cn("flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm", sup === "" ? "bg-primary/15 font-semibold text-primary" : "hover:bg-muted")}>
+              {t("none")}
+            </button>
+            {suppliers.map((s) => (
+              <button key={s.id} type="button" onClick={() => setSup(s.id!)} className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm", sup === s.id ? "bg-primary/15 font-semibold text-primary" : "hover:bg-muted")}>
+                <span className="grid size-8 place-items-center rounded-full bg-accent text-xs font-bold">{s.name[0]}</span>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {t("total")}: <b className="text-foreground">{fmt(num(qty) * num(cost))}</b>
+        </p>
+        <button type="button" onClick={save} className="w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
+          {t("save")}
+        </button>
       </div>
     </div>
   );
