@@ -1,8 +1,14 @@
 import { db, type Product, type SaleType, type PartyKind } from "./db";
+import { trySync } from "./sync";
 
 export const UNDO_WINDOW_MS = 10 * 60 * 1000;
 
-const queue = (op: string) => db.outbox.add({ op, createdAt: Date.now() });
+const queue = async (op: string) => {
+  await db.outbox.add({ op, createdAt: Date.now() });
+  if (typeof navigator !== "undefined" && navigator.onLine) {
+    trySync().catch(() => {});
+  }
+};
 
 export function computeSale(qty: number, unitPrice: number) {
   if (!Number.isFinite(qty) || qty <= 0) throw new Error("Quantity must be positive");
@@ -52,18 +58,16 @@ export async function reverseSale(saleId: number) {
   });
 }
 
-export async function saveProduct(p: Omit<Product, "updatedAt">) {
+export async function saveProduct(data: Omit<Product, "updatedAt"> & { id?: number }) {
   const now = Date.now();
-  if (p.id) {
-    await db.products.update(p.id, { ...p, updatedAt: now });
+  if (data.id) {
+    await db.products.update(data.id, { ...data, updatedAt: now });
   } else {
-    const id = await db.products.add({ ...p, updatedAt: now });
-    if (p.stock > 0) await db.movements.add({ productId: id, type: "open", qty: p.stock, unitCost: p.cost, createdAt: now });
+    await db.products.add({ ...data, updatedAt: now });
   }
   await queue("product");
 }
 
-/** Remove a product type from the catalogue (keeps past sales history). */
 export async function deleteProduct(productId: number) {
   await db.transaction("rw", [db.products, db.movements, db.outbox], async () => {
     const p = await db.products.get(productId);
@@ -79,21 +83,27 @@ export async function stockIn(productId: number, qty: number, unitCost: number, 
     const p = await db.products.get(productId);
     if (!p || qty <= 0) throw new Error("Invalid");
     const newStock = p.stock + qty;
-    const avg = Math.round((p.stock * p.cost + qty * unitCost) / newStock);
-    await db.products.update(productId, { stock: newStock, cost: avg, updatedAt: now });
+    const newCost = newStock > 0 ? (p.stock * p.cost + qty * unitCost) / newStock : unitCost;
+    await db.products.update(productId, { stock: newStock, cost: newCost, updatedAt: now });
     await db.movements.add({ productId, type: "in", qty, unitCost, createdAt: now });
-    if (supplierId) await db.debts.add({ partyId: supplierId, description: `${qty} × ${p.name}`, amount: qty * unitCost, createdAt: now, dueDays: 14 });
+    if (supplierId) {
+      await db.debts.add({
+        partyId: supplierId,
+        description: `Stock in ${qty} × ${p.name}`,
+        amount: qty * unitCost,
+        createdAt: now,
+      });
+    }
     await queue("stockIn");
   });
 }
 
-export async function adjustCount(productId: number, counted: number) {
+export async function adjustStock(productId: number, counted: number) {
   const now = Date.now();
   await db.transaction("rw", [db.products, db.movements, db.outbox], async () => {
     const p = await db.products.get(productId);
-    if (!p || counted < 0) throw new Error("Invalid");
+    if (!p) throw new Error("Not found");
     const diff = counted - p.stock;
-    if (diff === 0) return;
     await db.products.update(productId, { stock: counted, updatedAt: now });
     await db.movements.add({ productId, type: "adjust", qty: diff, createdAt: now });
     await queue("adjust");
@@ -107,14 +117,15 @@ export async function addParty(name: string, phone: string, kind: PartyKind) {
 }
 
 export async function addDebt(partyId: number, description: string, amount: number) {
-  await db.debts.add({ partyId, description, amount, createdAt: Date.now(), dueDays: 14 });
+  await db.debts.add({ partyId, description, amount, createdAt: Date.now() });
   await queue("debt");
 }
 
-export async function recordPayment(partyId: number, amount: number, createdAt = Date.now()) {
-  if (amount <= 0) throw new Error("Invalid amount");
-  await db.payments.add({ partyId, amount, createdAt });
+export async function addPayment(partyId: number, amount: number) {
+  await db.payments.add({ partyId, amount, createdAt: Date.now() });
   await queue("payment");
 }
 
-export const fmt = (n: number) => `${Math.round(n).toLocaleString("en-US")} RWF`;
+export function fmt(n: number) {
+  return `${Math.round(n).toLocaleString()} RWF`;
+}
