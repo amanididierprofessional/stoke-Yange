@@ -63,7 +63,7 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
       email,
       updated_at: new Date().toISOString(),
     });
-    if (profileErr) console.warn("[sync] profile", profileErr.message);
+    if (profileErr) return { ok: false, reason: `profile: ${profileErr.message}` };
   } catch (e) {
     console.warn("[sync] profile", e);
   }
@@ -169,7 +169,7 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
       })),
       { onConflict: "user_id,local_id" },
     );
-    if (de) console.warn("[sync] debts", de.message);
+    if (de) return { ok: false, reason: `debts: ${de.message}` };
   }
 
   if (payments.length) {
@@ -183,7 +183,7 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
       })),
       { onConflict: "user_id,local_id" },
     );
-    if (paye) console.warn("[sync] payments", paye.message);
+    if (paye) return { ok: false, reason: `payments: ${paye.message}` };
   }
 
   if (movements.length) {
@@ -199,7 +199,7 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
       })),
       { onConflict: "user_id,local_id" },
     );
-    if (me) console.warn("[sync] movements", me.message);
+    if (me) return { ok: false, reason: `movements: ${me.message}` };
   }
 
   const ids = pending.map((p) => p.id!).filter(Boolean);
