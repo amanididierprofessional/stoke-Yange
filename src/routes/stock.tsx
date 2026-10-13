@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PackagePlus, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
@@ -168,7 +168,69 @@ const num = (v: string) => Number(v.replace(/[^\d.]/g, "")) || 0;
 function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: string[]; onDone: () => void }) {
   const { t, lang } = useI18n();
   const [showDefaults, setShowDefaults] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const existing = useLiveQuery(() => db.products.toArray(), []) ?? [];
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setCameraOpen(false);
+  };
+
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  const openCamera = async () => {
+    setCameraError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Camera access needs a supported browser and a secure HTTPS connection.");
+      setCameraOpen(true);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play().catch(() => {});
+        }
+      });
+    } catch {
+      setCameraError("Camera permission was denied or the camera is already in use. Allow camera access and try again.");
+      setCameraOpen(true);
+    }
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setCameraError("Camera is still starting. Please try again in a moment.");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    const maxSide = 900;
+    const scale = Math.min(1, maxSide / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      setCameraError("Could not capture this photo. Please try again.");
+      return;
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // Stored only in this browser's local IndexedDB product record; never uploaded to Supabase.
+    setF((prev) => ({ ...prev, image: canvas.toDataURL("image/webp", 0.82) }));
+    stopCamera();
+  };
   const existingNames = new Set(existing.map((x) => x.name.toLowerCase()));
   const [f, setF] = useState({
     name: p?.name ?? "",
@@ -239,9 +301,27 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
         {!p && <span className="w-16" />}
       </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
-        <div className="flex justify-center">
-          <ProductThumb emoji={f.emoji} image={f.image || undefined} color={f.color || undefined} name={f.name} className="size-20" emojiClassName="text-4xl" />
+        <div className="flex flex-col items-center gap-2">
+          <ProductThumb emoji={f.emoji} image={f.image || undefined} color={f.color || undefined} name={f.name} className="size-24" emojiClassName="text-4xl" />
+          <div className="flex flex-wrap justify-center gap-2">
+            <button type="button" onClick={() => void openCamera()} className="rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary">Take product photo</button>
+            {f.image && <button type="button" onClick={() => setF((prev) => ({ ...prev, image: "" }))} className="rounded-full border px-4 py-2 text-xs font-medium text-muted-foreground">Remove photo</button>}
+          </div>
         </div>
+        {cameraOpen && (
+          <div className="space-y-3 rounded-2xl border bg-card p-3">
+            {cameraError ? (
+              <p className="text-sm text-destructive">{cameraError}</p>
+            ) : (
+              <video ref={videoRef} autoPlay playsInline muted className="max-h-72 w-full rounded-xl bg-black object-contain" />
+            )}
+            <div className="flex gap-2">
+              {!cameraError && <button type="button" onClick={capturePhoto} className="h-11 flex-1 rounded-full bg-primary font-semibold text-primary-foreground">Capture photo</button>}
+              <button type="button" onClick={stopCamera} className="h-11 flex-1 rounded-full border font-semibold">Close camera</button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Photos stay on this device in Stoke Yange app data. They are not sent to Supabase or saved to your gallery.</p>
+          </div>
+        )}
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
           {PRODUCT_EMOJIS.map((e) => (
             <button key={e} type="button" onClick={() => pickEmoji(e)} className={cn("grid size-11 shrink-0 place-items-center rounded-xl text-2xl", f.emoji === e ? "bg-primary/20 ring-2 ring-primary" : "bg-muted")}>
