@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PackagePlus, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { db, CATEGORIES, PRODUCT_EMOJIS, UNITS, type Product } from "@/lib/db";
-import { DEFAULT_PRODUCTS, CATALOG, CATALOG_CATEGORIES, type DefaultProduct } from "@/lib/defaults";
+import { CATALOG, CATALOG_CATEGORIES, type DefaultProduct } from "@/lib/defaults";
 import { deleteProduct, fmt, saveProduct, stockIn } from "@/lib/actions";
 import { useI18n } from "@/lib/i18n";
 import { CategoryPills } from "@/components/AppShell";
+import { ProductThumb } from "@/components/ProductThumb";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/stock")({
@@ -27,14 +28,14 @@ export const Route = createFileRoute("/stock")({
 
 const EMOJI_CATEGORY: Record<string, string> = {
   "🥛": "Beverages", "🍺": "Beverages", "🥤": "Beverages", "💧": "Beverages", "🧃": "Beverages", "☕": "Beverages", "🍵": "Beverages",
-  "🌾": "Grains & Flour", "🍚": "Grains & Flour", "🍙": "Grains & Flour", "🍞": "Grains & Flour",
+  "🌾": "Food", "🍚": "Food", "🍙": "Food", "🍞": "Food",
   "🥚": "Food", "🧀": "Food", "🫒": "Cooking", "🧂": "Seasonings",
-  "🍪": "Snacks", "🍫": "Snacks", "🍬": "Snacks", "🌶️": "Seasonings",
+  "🍪": "Food", "🍫": "Food", "🍬": "Food", "🌶️": "Seasonings",
   "🍎": "Food", "🍌": "Food", "🥕": "Food", "🧅": "Cooking",
-  "🧼": "Toiletries", "🪥": "Toiletries", "🧴": "Toiletries", "🧻": "Toiletries", "🧽": "Household", "🧹": "Household",
+  "🧼": "Daily use", "🪥": "Daily use", "🧴": "Daily use", "🧻": "Daily use", "🧽": "Household", "🧹": "Household",
   "📱": "Airtime", "📶": "Airtime", "🔋": "Household", "💡": "Household", "🕯️": "Household", "🔦": "Household",
-  "🍼": "Daily use", "👗": "Clothes", "👟": "Clothes", "✏️": "School", "📒": "School", "🧸": "School",
-  "📦": "Household",
+  "🍼": "Daily use", "👗": "Clothes", "👟": "Shoes", "✏️": "School", "📒": "School", "🧸": "School",
+  "👕": "Clothes", "👖": "Clothes", "🧥": "Clothes", "📦": "Household",
 };
 
 type Mode = { kind: "edit"; p?: Product } | { kind: "in"; p: Product } | null;
@@ -88,7 +89,7 @@ function StockPage() {
           return (
             <li key={p.id} className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card">
               <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setMode({ kind: "edit", p })}>
-                <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-accent text-2xl">{p.emoji}</span>
+                <ProductThumb emoji={p.emoji} image={p.image} color={p.color} name={p.name} className="size-12 shrink-0" emojiClassName="text-2xl" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold underline-offset-2 hover:underline">{p.name}</p>
                   <p className="text-xs text-muted-foreground">
@@ -174,6 +175,8 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     category: p?.category ?? cats[0] ?? "Food",
     unit: p?.unit ?? "pcs",
     emoji: p?.emoji ?? "📦",
+    image: p?.image ?? "",
+    color: p?.color ?? "",
     cost: String(p?.cost ?? ""),
     price: String(p?.price ?? ""),
     stock: String(p?.stock ?? ""),
@@ -185,20 +188,40 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   const save = async () => {
     if (!f.name.trim()) { toast.error(t("name")); return; }
     const data = {
-      name: f.name.trim(), category: f.category, unit: f.unit, emoji: f.emoji,
-      cost: num(f.cost), price: num(f.price), min: num(f.min), stock: p ? p.stock : num(f.stock),
+      name: f.name.trim(),
+      category: f.category,
+      unit: f.unit,
+      emoji: f.emoji,
+      image: f.image || undefined,
+      color: f.color || undefined,
+      cost: num(f.cost),
+      price: num(f.price),
+      min: num(f.min),
+      stock: p ? p.stock : num(f.stock),
     };
     await saveProduct(p?.id ? { ...data, id: p.id } : data);
     toast.success(t("save"));
     onDone();
   };
 
-  const addDefault = async (d: (typeof DEFAULT_PRODUCTS)[0]) => {
+  const addDefault = async (d: DefaultProduct) => {
     const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
     if (existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase())) {
-      toast.message(t("alreadyHave")); return;
+      toast.message(t("alreadyHave"));
+      return;
     }
-    await saveProduct({ name: label, category: d.category, unit: d.unit, emoji: d.emoji, cost: 0, price: 0, stock: 0, min: 3 });
+    await saveProduct({
+      name: label,
+      category: d.category,
+      unit: d.unit,
+      emoji: d.emoji,
+      image: d.image,
+      color: d.color,
+      cost: 0,
+      price: 0,
+      stock: 0,
+      min: 3,
+    });
     toast.success(t("addedDefault"));
   };
 
@@ -216,6 +239,9 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
         {!p && <span className="w-16" />}
       </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
+        <div className="flex justify-center">
+          <ProductThumb emoji={f.emoji} image={f.image || undefined} color={f.color || undefined} name={f.name} className="size-20" emojiClassName="text-4xl" />
+        </div>
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
           {PRODUCT_EMOJIS.map((e) => (
             <button key={e} type="button" onClick={() => pickEmoji(e)} className={cn("grid size-11 shrink-0 place-items-center rounded-xl text-2xl", f.emoji === e ? "bg-primary/20 ring-2 ring-primary" : "bg-muted")}>
@@ -282,7 +308,12 @@ function StockInForm({ p, onDone }: { p: Product; onDone: () => void }) {
   );
 }
 
-function DefaultsPicker({ lang, existingNames, onAdd, onBack }: {
+function DefaultsPicker({
+  lang,
+  existingNames,
+  onAdd,
+  onBack,
+}: {
   lang: string;
   existingNames: Set<string>;
   onAdd: (d: DefaultProduct) => void;
@@ -292,10 +323,26 @@ function DefaultsPicker({ lang, existingNames, onAdd, onBack }: {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("__all");
   const query = q.trim().toLowerCase();
-  const list = CATALOG.filter((d) =>
-    (cat === "__all" || d.category === cat) &&
-    (!query || d.name.toLowerCase().includes(query) || (d.nameRw ?? "").toLowerCase().includes(query)),
-  );
+
+  // Filter correctly per category — no hard slice that hides Food/etc.
+  const list = useMemo(() => {
+    return CATALOG.filter((d) => {
+      const catOk = cat === "__all" || d.category === cat;
+      if (!catOk) return false;
+      if (!query) return true;
+      return d.name.toLowerCase().includes(query) || (d.nameRw ?? "").toLowerCase().includes(query);
+    });
+  }, [cat, query]);
+
+  // When All + no search, show base products first (not thousands of variants)
+  const display = useMemo(() => {
+    if (cat === "__all" && !query) {
+      // base items only under All; open Clothes/Shoes for colour×size
+      return list.filter((d) => !/ size \d| size [SMLX]/.test(d.name));
+    }
+    return list;
+  }, [list, cat, query]);
+
   return (
     <div className="flex max-h-[85vh] flex-col">
       <DrawerHeader className="flex-row items-center gap-2 space-y-0">
@@ -305,30 +352,49 @@ function DefaultsPicker({ lang, existingNames, onAdd, onBack }: {
       <div className="space-y-2 px-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("search")}
-            className="h-11 w-full rounded-full border bg-card pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-ring" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t("search")}
+            className="h-11 w-full rounded-full border bg-card pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
         </div>
         <CategoryPills value={cat} onChange={setCat} categories={CATALOG_CATEGORIES} />
-        <p className="text-[11px] text-muted-foreground">{list.length} · {t("defaultsHint")}</p>
+        <p className="text-[11px] text-muted-foreground">
+          {display.length} · {t("defaultsHint")}
+          {cat === "__all" && !query ? " · Clothes/Shoes: open tab for colours & sizes" : ""}
+        </p>
       </div>
       <ul className="flex-1 space-y-1.5 overflow-y-auto px-4 pb-6 pt-2">
-        {list.slice(0, 300).map((d) => {
+        {display.map((d) => {
           const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
           const have = existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase());
           return (
             <li key={d.name} className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2">
-              <span className="text-xl">{d.emoji}</span>
+              <ProductThumb
+                emoji={d.emoji}
+                image={d.image}
+                color={d.color}
+                name={label}
+                className="size-11 shrink-0"
+                emojiClassName="text-xl"
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{label}</p>
                 <p className="text-[10px] text-muted-foreground">{d.category} · {d.unit}</p>
               </div>
-              <button type="button" disabled={have} onClick={() => onAdd(d)} className="h-9 shrink-0 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">
+              <button
+                type="button"
+                disabled={have}
+                onClick={() => onAdd(d)}
+                className="h-9 shrink-0 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40"
+              >
                 {have ? t("alreadyHave") : t("addDefault")}
               </button>
             </li>
           );
         })}
-        {list.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
+        {display.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
       </ul>
     </div>
   );

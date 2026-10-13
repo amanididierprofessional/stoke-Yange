@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { db, type Product, type SaleType } from "@/lib/db";
 import { addParty, fmt, recordSale, reverseSale } from "@/lib/actions";
 import { useI18n, type Key } from "@/lib/i18n";
+import { ProductThumb } from "@/components/ProductThumb";
 import { cn } from "@/lib/utils";
 
 export async function quickSell(p: Product, t: (k: Key) => string) {
@@ -24,7 +25,6 @@ export async function quickSell(p: Product, t: (k: Key) => string) {
   }
 }
 
-/** Bottom sheet for selling — plain fixed panel (no Vaul) so it never takes down the whole page. */
 export function SellSheet({ product, onClose }: { product: Product | null; onClose: () => void }) {
   const { t } = useI18n();
   const [qty, setQty] = useState(1);
@@ -113,7 +113,7 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
       <button type="button" className="absolute inset-0 bg-black/50" aria-label="Close" onClick={onClose} />
       <div className="relative z-[81] flex max-h-[90vh] w-full max-w-md flex-col rounded-t-3xl bg-background shadow-2xl sm:rounded-3xl">
         <div className="flex items-center gap-3 border-b px-4 py-3">
-          <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-accent text-3xl">{product.emoji || "📦"}</span>
+          <ProductThumb emoji={product.emoji} image={product.image} color={product.color} name={product.name} className="size-14 shrink-0" emojiClassName="text-3xl" />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-bold">{product.name}</h2>
             <p className="text-sm text-muted-foreground">
@@ -196,8 +196,15 @@ export function ProductCard({ p, onOpen }: { p: Product; onOpen: () => void }) {
   return (
     <div className="flex flex-col rounded-2xl bg-card p-3 shadow-card">
       <button type="button" onClick={onOpen} className="text-left">
-        <div className="relative grid aspect-[4/3] place-items-center rounded-xl bg-accent text-5xl">
-          {p.emoji || "📦"}
+        <div className="relative">
+          <ProductThumb
+            emoji={p.emoji}
+            image={p.image}
+            color={p.color}
+            name={p.name}
+            className="aspect-[4/3] w-full text-5xl"
+            emojiClassName="text-5xl"
+          />
           <span className={cn("absolute left-2 top-2 max-w-[85%] truncate rounded-full px-2 py-0.5 text-[10px] font-semibold", p.stock === 0 ? "bg-destructive text-destructive-foreground" : low ? "bg-warning text-warning-foreground" : "bg-card text-foreground")}>
             {p.stock === 0 ? t("out") : `${p.stock} ${t("left")}${low ? ` · ${t("low")}` : ""}`}
           </span>
