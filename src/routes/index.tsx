@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { isAppMode } from "@/lib/app-mode";
 import { CategoryPills } from "@/components/AppShell";
 import { ProductCard, SellSheet } from "@/components/SellSheet";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -47,7 +48,7 @@ function RootEntry() {
   if (!showApp) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="grid size-14 place-items-center rounded-3xl bg-hero text-2xl text-primary-foreground">🏪</div>
+        <BrandLogo className="size-14 rounded-3xl" />
       </div>
     );
   }
