@@ -25,9 +25,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
+  /** Marketing site — full width, no app chrome / auth gate */
+  const isLanding = path === "/welcome" || path.startsWith("/welcome/");
+
   const onAuthed = useCallback(() => setAuthed(true), []);
 
   useEffect(() => {
+    if (isLanding) {
+      setReady(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const stages: { pct: number; label: string; run: () => Promise<void> }[] = [
@@ -57,7 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
     };
-  }, []);
+  }, [isLanding]);
 
   const tabs = [
     { to: "/" as const, label: t("sell"), icon: ShoppingBag },
@@ -65,6 +72,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     { to: "/credit" as const, label: t("credit"), icon: BookUser },
     { to: "/history" as const, label: t("history"), icon: History },
   ];
+
+  if (isLanding) {
+    return <>{children}</>;
+  }
 
   if (!ready) {
     return (
