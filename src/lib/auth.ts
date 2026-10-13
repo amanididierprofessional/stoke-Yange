@@ -238,7 +238,7 @@ export async function signIn(opts: {
   // A reachable cloud account is authoritative while online. Do not silently
   // authenticate a local-only account after cloud credentials were rejected.
   if (supabaseConfigured && client && navigator.onLine) {
-    return { ok: false, error: error ? "bad_password" : "cloud_login_failed" };
+    return { ok: false, error: "bad_password" };
   }
 
   // 2) Local fallback is for offline use or when cloud has not been configured.
