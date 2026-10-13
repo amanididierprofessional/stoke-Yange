@@ -1,24 +1,59 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Search } from "lucide-react";
 import { db, CATEGORIES, type Product } from "@/lib/db";
 import { fmt } from "@/lib/actions";
 import { useI18n } from "@/lib/i18n";
+import { isAppMode } from "@/lib/app-mode";
 import { CategoryPills } from "@/components/AppShell";
 import { ProductCard, SellSheet } from "@/components/SellSheet";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Sell — Stoke Yange" },
-      { name: "description", content: "One-tap selling, inventory value and today's cash for your shop." },
-      { property: "og:title", content: "Stoke Yange — Sell in one tap" },
-      { property: "og:description", content: "Track stock, sales and credit for small shops, even offline." },
+      { title: "Stoke Yange" },
+      {
+        name: "description",
+        content: "Sell, stock and credit for small shops — install free or open the app.",
+      },
+      { property: "og:title", content: "Stoke Yange — Shop stock & credit" },
+      {
+        property: "og:description",
+        content: "Record sales, track stock and credit, even offline.",
+      },
     ],
   }),
-  component: SellPage,
+  component: RootEntry,
 });
+
+/**
+ * Shared link https://stoke-yange.vercel.app/
+ * - Browser (not installed): → landing /welcome
+ * - Installed PWA or "Open app": → sell screen (never marketing again)
+ */
+function RootEntry() {
+  const navigate = useNavigate();
+  const [showApp, setShowApp] = useState(false);
+
+  useEffect(() => {
+    if (isAppMode()) {
+      setShowApp(true);
+      return;
+    }
+    navigate({ to: "/welcome", replace: true });
+  }, [navigate]);
+
+  if (!showApp) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="grid size-14 place-items-center rounded-3xl bg-hero text-2xl text-primary-foreground">🏪</div>
+      </div>
+    );
+  }
+
+  return <SellPage />;
+}
 
 const startOfDay = () => new Date(new Date().setHours(0, 0, 0, 0)).getTime();
 
@@ -28,7 +63,11 @@ function SellPage() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<Product | null>(null);
   const products = useLiveQuery(() => db.products.orderBy("name").toArray(), []) ?? [];
-  const today = useLiveQuery(() => db.sales.where("createdAt").aboveOrEqual(startOfDay()).filter((s) => !s.reversed).toArray(), []) ?? [];
+  const today =
+    useLiveQuery(
+      () => db.sales.where("createdAt").aboveOrEqual(startOfDay()).filter((s) => !s.reversed).toArray(),
+      [],
+    ) ?? [];
 
   const allSales = useLiveQuery(() => db.sales.toArray(), []) ?? [];
   const sold = new Map<number, number>();
@@ -37,7 +76,8 @@ function SellPage() {
   const cash = today.filter((s) => s.type === "cash").reduce((a, s) => a + s.total, 0);
   const credit = today.filter((s) => s.type === "credit").reduce((a, s) => a + s.total, 0);
   const low = products.filter((p) => p.stock <= p.min);
-  const list = products.filter((p) => (cat === "__all" || p.category === cat) && p.name.toLowerCase().includes(q.toLowerCase()))
+  const list = products
+    .filter((p) => (cat === "__all" || p.category === cat) && p.name.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => (sold.get(b.id!) ?? 0) - (sold.get(a.id!) ?? 0) || a.name.localeCompare(b.name));
   const cats = [...new Set([...CATEGORIES, ...products.map((p) => p.category)])];
 

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   Cloud,
@@ -13,6 +13,7 @@ import {
   WifiOff,
   Zap,
 } from "lucide-react";
+import { enterAppMode, isStandalone } from "@/lib/app-mode";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/welcome")({
@@ -44,7 +45,6 @@ const copy = {
     install: "Install app",
     open: "Open app",
     installing: "Installing…",
-    installed: "Already installed",
     iosHint: "On iPhone: Share → Add to Home Screen",
     featuresTitle: "Everything your shop needs",
     featuresSub: "Short tools. Clear numbers. No clutter.",
@@ -83,7 +83,6 @@ const copy = {
     install: "Shyira porogaramu",
     open: "Fungura porogaramu",
     installing: "Birimo…",
-    installed: "Isanzwe yashyizwe",
     iosHint: "Kuri iPhone: Share → Add to Home Screen",
     featuresTitle: "Ibyo iduka ryawe rikeneye",
     featuresSub: "Ibikoresho byoroshye. Imibare isobanutse.",
@@ -123,6 +122,7 @@ type BIPEvent = Event & {
 };
 
 function WelcomePage() {
+  const navigate = useNavigate();
   const [lang, setLang] = useState<Lang>(() => {
     if (typeof window === "undefined") return "en";
     const s = localStorage.getItem("sy-lang");
@@ -134,17 +134,21 @@ function WelcomePage() {
   const [busy, setBusy] = useState(false);
   const [isIos, setIsIos] = useState(false);
 
+  /** If already in installed PWA, skip marketing → app */
+  useEffect(() => {
+    if (isStandalone()) {
+      enterAppMode();
+      navigate({ to: "/", replace: true });
+    }
+  }, [navigate]);
+
   useEffect(() => {
     localStorage.setItem("sy-lang", lang);
     document.documentElement.lang = lang;
   }, [lang]);
 
   useEffect(() => {
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      // @ts-expect-error iOS
-      window.navigator.standalone === true;
-    setInstalled(standalone);
+    setInstalled(isStandalone());
     const ua = navigator.userAgent;
     setIsIos(/iPad|iPhone|iPod/.test(ua) && !(window as unknown as { MSStream?: unknown }).MSStream);
 
@@ -152,18 +156,38 @@ function WelcomePage() {
       e.preventDefault();
       setDeferred(e as BIPEvent);
     };
+    const onInstalled = () => {
+      enterAppMode();
+      setInstalled(true);
+      navigate({ to: "/", replace: true });
+    };
     window.addEventListener("beforeinstallprompt", onBip);
-    window.addEventListener("appinstalled", () => setInstalled(true));
-    return () => window.removeEventListener("beforeinstallprompt", onBip);
-  }, []);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBip);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, [navigate]);
+
+  const goApp = () => {
+    enterAppMode();
+    navigate({ to: "/" });
+  };
 
   const install = async () => {
-    if (!deferred) return;
+    if (!deferred) {
+      goApp();
+      return;
+    }
     setBusy(true);
     try {
       await deferred.prompt();
       const { outcome } = await deferred.userChoice;
-      if (outcome === "accepted") setInstalled(true);
+      if (outcome === "accepted") {
+        enterAppMode();
+        setInstalled(true);
+        navigate({ to: "/", replace: true });
+      }
       setDeferred(null);
     } finally {
       setBusy(false);
@@ -187,7 +211,6 @@ function WelcomePage() {
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-foreground">
-      {/* Top bar */}
       <header className="sticky top-0 z-40 border-b border-black/5 bg-[#FAF8F5]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4 sm:h-16 sm:px-6">
           <div className="flex items-center gap-2.5">
@@ -232,7 +255,6 @@ function WelcomePage() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="mx-auto max-w-5xl px-4 pb-12 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
           <div className="text-center lg:text-left">
@@ -243,19 +265,9 @@ function WelcomePage() {
             <h1 className="text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl lg:text-[2.75rem]">
               {t.heroTitle}
             </h1>
-            <p className="mx-auto mt-4 max-w-md text-base text-muted-foreground sm:text-lg lg:mx-0">
-              {t.heroSub}
-            </p>
+            <p className="mx-auto mt-4 max-w-md text-base text-muted-foreground sm:text-lg lg:mx-0">{t.heroSub}</p>
             <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center lg:justify-start">
-              {installed ? (
-                <Link
-                  to="/"
-                  className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-bold text-primary-foreground shadow-card"
-                >
-                  <Smartphone className="size-5" />
-                  {t.open}
-                </Link>
-              ) : deferred ? (
+              {deferred && !installed ? (
                 <button
                   type="button"
                   onClick={install}
@@ -266,24 +278,24 @@ function WelcomePage() {
                   {busy ? t.installing : t.install}
                 </button>
               ) : (
-                <Link
-                  to="/"
+                <button
+                  type="button"
+                  onClick={goApp}
                   className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-bold text-primary-foreground shadow-card"
                 >
                   <Smartphone className="size-5" />
                   {t.open}
-                </Link>
+                </button>
               )}
-              <Link
-                to="/"
+              <button
+                type="button"
+                onClick={goApp}
                 className="inline-flex h-13 items-center justify-center rounded-full border border-black/10 bg-white px-8 text-base font-semibold text-foreground shadow-sm"
               >
                 {t.open}
-              </Link>
+              </button>
             </div>
-            {isIos && !installed && (
-              <p className="mt-4 text-xs text-muted-foreground">{t.iosHint}</p>
-            )}
+            {isIos && !installed && <p className="mt-4 text-xs text-muted-foreground">{t.iosHint}</p>}
             {!deferred && !installed && !isIos && (
               <p className="mt-3 text-xs text-muted-foreground">
                 {lang === "en"
@@ -293,7 +305,6 @@ function WelcomePage() {
             )}
           </div>
 
-          {/* Phone mock */}
           <div className="relative mx-auto w-full max-w-sm">
             <div className="absolute -inset-6 rounded-[2.5rem] bg-gradient-to-br from-orange-200/60 via-amber-100/40 to-transparent blur-2xl" />
             <div className="relative overflow-hidden rounded-[2rem] border border-black/5 bg-white p-3 shadow-2xl shadow-orange-900/10">
@@ -325,7 +336,6 @@ function WelcomePage() {
         </div>
       </section>
 
-      {/* Features */}
       <section className="border-t border-black/5 bg-white py-14 sm:py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="mx-auto max-w-xl text-center">
@@ -334,10 +344,7 @@ function WelcomePage() {
           </div>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {features.map(({ icon: Icon, title, body, tone }) => (
-              <article
-                key={title}
-                className="group rounded-3xl border border-black/5 bg-[#FAF8F5] p-5 transition-shadow hover:shadow-card"
-              >
+              <article key={title} className="rounded-3xl border border-black/5 bg-[#FAF8F5] p-5 transition-shadow hover:shadow-card">
                 <div className={cn("mb-4 grid size-12 place-items-center rounded-2xl", tone)}>
                   <Icon className="size-6" strokeWidth={2} />
                 </div>
@@ -349,7 +356,6 @@ function WelcomePage() {
         </div>
       </section>
 
-      {/* Offline band */}
       <section className="bg-ink py-12 text-ink-foreground sm:py-14">
         <div className="mx-auto flex max-w-5xl flex-col items-center gap-4 px-4 text-center sm:flex-row sm:px-6 sm:text-left">
           <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-white/10">
@@ -363,7 +369,6 @@ function WelcomePage() {
         </div>
       </section>
 
-      {/* How it works */}
       <section className="py-14 sm:py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="mx-auto max-w-xl text-center">
@@ -372,10 +377,8 @@ function WelcomePage() {
           </div>
           <div className="mt-10 grid gap-6 sm:grid-cols-3">
             {steps.map(({ n, title, body, icon: Icon }) => (
-              <div key={n} className="relative rounded-3xl border border-black/5 bg-white p-6 text-center shadow-sm">
-                <span className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
-                  {n}
-                </span>
+              <div key={n} className="rounded-3xl border border-black/5 bg-white p-6 text-center shadow-sm">
+                <span className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-primary text-lg font-bold text-primary-foreground">{n}</span>
                 <Icon className="mx-auto mb-3 size-6 text-primary" />
                 <h3 className="font-bold">{title}</h3>
                 <p className="mt-1.5 text-sm text-muted-foreground">{body}</p>
@@ -385,7 +388,6 @@ function WelcomePage() {
         </div>
       </section>
 
-      {/* Final CTA */}
       <section className="border-t border-black/5 bg-white py-14 sm:py-16">
         <div className="mx-auto max-w-lg px-4 text-center sm:px-6">
           <div className="mx-auto mb-5 grid size-16 place-items-center rounded-3xl bg-hero text-3xl text-white shadow-card">🏪</div>
@@ -403,13 +405,14 @@ function WelcomePage() {
                 {busy ? t.installing : t.install}
               </button>
             ) : (
-              <Link
-                to="/"
+              <button
+                type="button"
+                onClick={goApp}
                 className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-bold text-primary-foreground"
               >
                 <Smartphone className="size-5" />
                 {t.open}
-              </Link>
+              </button>
             )}
           </div>
         </div>
