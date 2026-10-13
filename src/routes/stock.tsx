@@ -184,6 +184,13 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     streamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
 
+  useEffect(() => {
+    if (cameraOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      void videoRef.current.play().catch(() => {});
+    }
+  }, [cameraOpen]);
+
   const openCamera = async () => {
     setCameraError("");
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -198,12 +205,6 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
       });
       streamRef.current = stream;
       setCameraOpen(true);
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play().catch(() => {});
-        }
-      });
     } catch {
       setCameraError("Camera permission was denied or the camera is already in use. Allow camera access and try again.");
       setCameraOpen(true);
