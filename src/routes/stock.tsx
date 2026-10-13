@@ -203,46 +203,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   };
 
   if (showDefaults && !p) {
-    const byCat = new Map<string, typeof DEFAULT_PRODUCTS>();
-    for (const d of DEFAULT_PRODUCTS) {
-      const list = byCat.get(d.category) ?? [];
-      list.push(d);
-      byCat.set(d.category, list);
-    }
-    return (
-      <div className="overflow-y-auto">
-        <DrawerHeader className="flex-row items-center gap-2 space-y-0">
-          <button type="button" onClick={() => setShowDefaults(false)} className="rounded-full border px-3 py-1.5 text-xs font-semibold">←</button>
-          <DrawerTitle>{t("defaultsTitle")}</DrawerTitle>
-        </DrawerHeader>
-        <p className="px-4 text-xs text-muted-foreground">{t("defaultsHint")}</p>
-        <div className="space-y-4 px-4 pb-6 pt-2">
-          {[...byCat.entries()].map(([c, items]) => (
-            <div key={c}>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{c}</p>
-              <ul className="space-y-1.5">
-                {items.map((d) => {
-                  const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
-                  const have = existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase());
-                  return (
-                    <li key={d.name} className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2">
-                      <span className="text-xl">{d.emoji}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{label}</p>
-                        <p className="text-[10px] text-muted-foreground">{d.unit}</p>
-                      </div>
-                      <button type="button" disabled={have} onClick={() => addDefault(d)} className="h-9 shrink-0 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">
-                        {have ? t("alreadyHave") : t("addDefault")}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <DefaultsPicker lang={lang} existingNames={existingNames} onAdd={addDefault} onBack={() => setShowDefaults(false)} />;
   }
 
   return (
