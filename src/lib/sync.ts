@@ -291,7 +291,7 @@ export async function pullFromCloud(): Promise<{ ok: boolean; reason?: string }>
           description: d.description || "",
           amount: Number(d.amount),
           createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
-          saleId: d.sale_local_id != null ? Number(d.sale_local_id) : undefined,
+          ...(d.sale_local_id != null ? { saleId: Number(d.sale_local_id) } : {}),
         })),
       );
     }
@@ -312,7 +312,7 @@ export async function pullFromCloud(): Promise<{ ok: boolean; reason?: string }>
           productId: Number(m.product_local_id),
           type: m.type,
           qty: Number(m.qty),
-          unitCost: m.unit_cost != null ? Number(m.unit_cost) : undefined,
+          ...(m.unit_cost != null ? { unitCost: Number(m.unit_cost) } : {}),
           createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
         })),
       );
