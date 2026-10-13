@@ -20,16 +20,16 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/welcome")({
   head: () => ({
     meta: [
-      { title: "Stoke Yange — Shop stock, sales & credit" },
+      { title: "Stoke Yange — Your shop, on your phone" },
       {
         name: "description",
         content:
-          "Simple POS for small shops in Rwanda. Sell in one tap, track stock and credit, work offline. Free to install.",
+          "Built for small shops and big ones. Works both online and offline. Free to install.",
       },
-      { property: "og:title", content: "Stoke Yange" },
+      { property: "og:title", content: "Stoke Yange — Your shop, on your phone" },
       {
         property: "og:description",
-        content: "Record sales, stock and credit — even without internet.",
+        content: "Built for small shops and big ones. Works both online and offline.",
       },
     ],
   }),
@@ -41,8 +41,9 @@ type Lang = "en" | "rw";
 const copy = {
   en: {
     badge: "Free for shop owners",
-    heroTitle: "Sell, stock and credit — in one simple app",
-    heroSub: "Built for small shops. Works on your phone. Works offline.",
+    heroTitle: "Your shop, on your phone",
+    heroSub: "Built for small shops and big ones.",
+    heroSub2: "Works both online and offline.",
     install: "Install app",
     open: "Open app",
     installing: "Installing…",
@@ -80,8 +81,9 @@ const copy = {
   },
   rw: {
     badge: "Ubuntu ku bacuruzi",
-    heroTitle: "Gurisha, ububiko n'amadeni — muri app imwe",
-    heroSub: "Yagenewe iduka nto. Ikora kuri telefone. Ikora nta murandasi.",
+    heroTitle: "Iduka ryawe, kuri telefone",
+    heroSub: "Yagenewe amaduka mato ndetse n'amanini.",
+    heroSub2: "Ikora iyo ufite murandasi n'iyo utayifite.",
     install: "Shyiramo app",
     open: "Fungura app",
     installing: "Birimo…",
@@ -269,9 +271,10 @@ function WelcomePage() {
             <h1 className="text-balance text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl lg:text-[2.5rem]">
               {t.heroTitle}
             </h1>
-            <p className="mx-auto mt-4 max-w-md text-pretty text-base leading-snug text-muted-foreground sm:text-lg lg:mx-0">
-              {t.heroSub}
-            </p>
+            <div className="mx-auto mt-4 max-w-md space-y-1 text-pretty text-base leading-snug text-muted-foreground sm:text-lg lg:mx-0">
+              <p>{t.heroSub}</p>
+              <p>{t.heroSub2}</p>
+            </div>
 
             <div className="mt-8 flex justify-center lg:justify-start">
               <button
