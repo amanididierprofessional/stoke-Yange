@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Bell, BookUser, History, Package, Settings, ShoppingBag, Wifi, WifiOff } from "lucide-react";
+import { Bell, BookUser, History, Package, Settings, ShoppingBag, Wifi, WifiOff, Cloud, X, RefreshCw } from "lucide-react";
 import { db, ensureSeeded } from "@/lib/db";
 import { trySync } from "@/lib/sync";
 import { isLoggedIn } from "@/lib/auth";
@@ -23,12 +23,37 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(false);
   const shop = useShopName();
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
+  const transactionCount = useLiveQuery(() => db.sales.count(), []) ?? 0;
+  const syncMode = useLiveQuery(() => db.settings.get("cloudSyncMode"), [])?.value;
+  const promptDismissed = useLiveQuery(() => db.settings.get("cloudSyncPromptDismissed"), [])?.value === "1";
+  const [showCloudPrompt, setShowCloudPrompt] = useState(false);
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   const isLanding = path === "/welcome" || path.startsWith("/welcome/");
 
   const onAuthed = useCallback(() => setAuthed(true), []);
+
+  useEffect(() => {
+    if (transactionCount >= 10 && !syncMode && !promptDismissed) setShowCloudPrompt(true);
+  }, [transactionCount, syncMode, promptDismissed]);
+
+  const chooseSyncMode = async (mode: "auto" | "manual") => {
+    await db.settings.put({ key: "cloudSyncMode", value: mode });
+    await db.settings.put({ key: "cloudSyncPromptDismissed", value: "1" });
+    setShowCloudPrompt(false);
+    if (mode === "auto" && navigator.onLine) {
+      const result = await trySync({ force: true });
+      if (!result.ok && result.reason !== "no_session") {
+        console.warn("[cloud-sync] automatic sync setup:", result.reason);
+      }
+    }
+  };
+
+  const dismissCloudPrompt = async () => {
+    await db.settings.put({ key: "cloudSyncPromptDismissed", value: "1" });
+    setShowCloudPrompt(false);
+  };
 
   useEffect(() => {
     if (isLanding) {
@@ -119,6 +144,32 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
       <main className="px-4">{children}</main>
       {!authed && <AuthWelcome onAuthed={onAuthed} />}
+      {showCloudPrompt && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="cloud-backup-title">
+          <section className="relative w-full max-w-sm rounded-3xl border bg-card p-5 shadow-2xl">
+            <button type="button" onClick={dismissCloudPrompt} aria-label="Funga" className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+              <X className="size-4" />
+            </button>
+            <div className="mb-3 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+              <Cloud className="size-6" />
+            </div>
+            <h2 id="cloud-backup-title" className="pr-7 text-lg font-bold">Bika amakuru yawe kuri cloud</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Bika amakuru yawe kuri cloud kugira ngo ubashe kuyagarura ahazaza.</p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => chooseSyncMode("auto")} className="flex min-h-32 flex-col items-start rounded-2xl border border-primary/40 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                <span className="mb-3 grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground"><RefreshCw className="size-4" /></span>
+                <span className="text-sm font-bold leading-snug">Kwibika mu gihe ufite internet</span>
+                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">Amakuru azajya abikwa igihe cyose ufite internet.</span>
+              </button>
+              <button type="button" onClick={() => chooseSyncMode("manual")} className="flex min-h-32 flex-col items-start rounded-2xl border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                <span className="mb-3 grid size-9 place-items-center rounded-xl bg-muted"><Cloud className="size-4" /></span>
+                <span className="text-sm font-bold leading-snug">Kuyishyiriraho</span>
+                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">Wowe uhitamo igihe cyo kubika amakuru.</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-[calc(100%-2rem)] max-w-sm items-center justify-between gap-1 rounded-full bg-ink p-1.5 shadow-card">
         {tabs.map(({ to, label, icon: Icon }) => {
           const active = to === "/" ? path === "/" : path.startsWith(to);
