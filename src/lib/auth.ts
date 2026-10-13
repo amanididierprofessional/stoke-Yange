@@ -298,8 +298,10 @@ export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }>
   if (!supabaseConfigured || !supabase) return { ok: false, reason: "not_configured" };
   if (!navigator.onLine) return { ok: false, reason: "offline" };
 
+  const sb = supabase;
   const run = async (): Promise<{ ok: boolean; reason?: string }> => {
     try {
+      const supabase = sb;
       const { data } = await supabase.auth.getSession();
       const uid = data.session?.user?.id;
       if (!uid) return { ok: false, reason: "no_session" };

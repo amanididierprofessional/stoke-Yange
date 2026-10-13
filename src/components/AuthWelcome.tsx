@@ -53,7 +53,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   useEffect(() => {
     if (mode !== "signup") {
       setShowConfirm(false);
-      return;
+      return undefined;
     }
     if (password.length >= MIN_PASSWORD) {
       const tmr = setTimeout(() => setShowConfirm(true), 400);
@@ -61,6 +61,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     }
     setShowConfirm(false);
     setConfirm("");
+    return undefined;
   }, [password, mode]);
 
   if (!open) return null;

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { db, CATEGORIES, PRODUCT_EMOJIS, UNITS, type Product } from "@/lib/db";
-import { DEFAULT_PRODUCTS } from "@/lib/defaults";
+import { DEFAULT_PRODUCTS, CATALOG, CATALOG_CATEGORIES, type DefaultProduct } from "@/lib/defaults";
 import { deleteProduct, fmt, saveProduct, stockIn } from "@/lib/actions";
 import { useI18n } from "@/lib/i18n";
 import { CategoryPills } from "@/components/AppShell";
@@ -203,46 +203,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   };
 
   if (showDefaults && !p) {
-    const byCat = new Map<string, typeof DEFAULT_PRODUCTS>();
-    for (const d of DEFAULT_PRODUCTS) {
-      const list = byCat.get(d.category) ?? [];
-      list.push(d);
-      byCat.set(d.category, list);
-    }
-    return (
-      <div className="overflow-y-auto">
-        <DrawerHeader className="flex-row items-center gap-2 space-y-0">
-          <button type="button" onClick={() => setShowDefaults(false)} className="rounded-full border px-3 py-1.5 text-xs font-semibold">←</button>
-          <DrawerTitle>{t("defaultsTitle")}</DrawerTitle>
-        </DrawerHeader>
-        <p className="px-4 text-xs text-muted-foreground">{t("defaultsHint")}</p>
-        <div className="space-y-4 px-4 pb-6 pt-2">
-          {[...byCat.entries()].map(([c, items]) => (
-            <div key={c}>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{c}</p>
-              <ul className="space-y-1.5">
-                {items.map((d) => {
-                  const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
-                  const have = existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase());
-                  return (
-                    <li key={d.name} className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2">
-                      <span className="text-xl">{d.emoji}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{label}</p>
-                        <p className="text-[10px] text-muted-foreground">{d.unit}</p>
-                      </div>
-                      <button type="button" disabled={have} onClick={() => addDefault(d)} className="h-9 shrink-0 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">
-                        {have ? t("alreadyHave") : t("addDefault")}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <DefaultsPicker lang={lang} existingNames={existingNames} onAdd={addDefault} onBack={() => setShowDefaults(false)} />;
   }
 
   return (
@@ -317,6 +278,58 @@ function StockInForm({ p, onDone }: { p: Product; onDone: () => void }) {
         <p className="text-sm font-semibold">{t("total")}: {fmt(num(qty) * num(cost))}</p>
         <button type="button" onClick={save} className="h-13 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
       </div>
+    </div>
+  );
+}
+
+function DefaultsPicker({ lang, existingNames, onAdd, onBack }: {
+  lang: string;
+  existingNames: Set<string>;
+  onAdd: (d: DefaultProduct) => void;
+  onBack: () => void;
+}) {
+  const { t } = useI18n();
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("__all");
+  const query = q.trim().toLowerCase();
+  const list = CATALOG.filter((d) =>
+    (cat === "__all" || d.category === cat) &&
+    (!query || d.name.toLowerCase().includes(query) || (d.nameRw ?? "").toLowerCase().includes(query)),
+  );
+  return (
+    <div className="flex max-h-[85vh] flex-col">
+      <DrawerHeader className="flex-row items-center gap-2 space-y-0">
+        <button type="button" onClick={onBack} className="rounded-full border px-3 py-1.5 text-xs font-semibold">←</button>
+        <DrawerTitle>{t("defaultsTitle")}</DrawerTitle>
+      </DrawerHeader>
+      <div className="space-y-2 px-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("search")}
+            className="h-11 w-full rounded-full border bg-card pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-ring" />
+        </div>
+        <CategoryPills value={cat} onChange={setCat} categories={CATALOG_CATEGORIES} />
+        <p className="text-[11px] text-muted-foreground">{list.length} · {t("defaultsHint")}</p>
+      </div>
+      <ul className="flex-1 space-y-1.5 overflow-y-auto px-4 pb-6 pt-2">
+        {list.slice(0, 300).map((d) => {
+          const label = lang === "rw" && d.nameRw ? d.nameRw : d.name;
+          const have = existingNames.has(label.toLowerCase()) || existingNames.has(d.name.toLowerCase());
+          return (
+            <li key={d.name} className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2">
+              <span className="text-xl">{d.emoji}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{label}</p>
+                <p className="text-[10px] text-muted-foreground">{d.category} · {d.unit}</p>
+              </div>
+              <button type="button" disabled={have} onClick={() => onAdd(d)} className="h-9 shrink-0 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-40">
+                {have ? t("alreadyHave") : t("addDefault")}
+              </button>
+            </li>
+          );
+        })}
+        {list.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
+      </ul>
     </div>
   );
 }

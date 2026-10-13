@@ -48,3 +48,38 @@ export const DEFAULT_PRODUCTS: DefaultProduct[] = [
 export const DEFAULT_CATEGORIES = [
   ...new Set(DEFAULT_PRODUCTS.map((p) => p.category)),
 ];
+
+/** Colour + size variants so look-alike items (e.g. two brands of T-shirt) get distinct cards. */
+const COLORS: [string, string, string][] = [
+  ["Black", "Umukara", "⚫"], ["White", "Umweru", "⚪"], ["Red", "Umutuku", "🔴"], ["Blue", "Ubururu", "🔵"],
+  ["Green", "Icyatsi", "🟢"], ["Yellow", "Umuhondo", "🟡"], ["Brown", "Ikigina", "🟤"], ["Purple", "Move", "🟣"],
+  ["Orange", "Orange", "🟠"],
+];
+const CLOTH_SIZES = ["S", "M", "L", "XL", "XXL"];
+const SHOE_SIZES = ["36", "37", "38", "39", "40", "41", "42", "43", "44"];
+const APPAREL: { name: string; nameRw: string; cat: string; emoji: string; sizes: string[] }[] = [
+  { name: "T-shirt", nameRw: "Umupira", cat: "Clothes", emoji: "👕", sizes: CLOTH_SIZES },
+  { name: "Shirt", nameRw: "Ishati", cat: "Clothes", emoji: "👔", sizes: CLOTH_SIZES },
+  { name: "Dress", nameRw: "Ikanzu", cat: "Clothes", emoji: "👗", sizes: CLOTH_SIZES },
+  { name: "Jeans", nameRw: "Jeans", cat: "Clothes", emoji: "👖", sizes: CLOTH_SIZES },
+  { name: "Sweater", nameRw: "Swetere", cat: "Clothes", emoji: "🧥", sizes: CLOTH_SIZES },
+  { name: "Sneakers", nameRw: "Inkweto za siporo", cat: "Shoes", emoji: "👟", sizes: SHOE_SIZES },
+  { name: "Leather shoes", nameRw: "Inkweto z'uruhu", cat: "Shoes", emoji: "👞", sizes: SHOE_SIZES },
+  { name: "Heels", nameRw: "Inkweto ndende", cat: "Shoes", emoji: "👠", sizes: SHOE_SIZES },
+  { name: "Sandals", nameRw: "Sandali", cat: "Shoes", emoji: "🩴", sizes: SHOE_SIZES },
+];
+const VARIANTS: DefaultProduct[] = APPAREL.flatMap((a) =>
+  COLORS.flatMap(([c, cRw, dot]) =>
+    a.sizes.map((s) => ({
+      name: `${a.name} ${c} size ${s}`,
+      nameRw: `${a.nameRw} ${cRw} ${s}`,
+      category: a.cat,
+      unit: "pcs",
+      emoji: `${a.emoji}${dot}`,
+    })),
+  ),
+);
+
+/** Full searchable catalogue: base items + every colour/size variant. */
+export const CATALOG: DefaultProduct[] = [...DEFAULT_PRODUCTS, ...VARIANTS];
+export const CATALOG_CATEGORIES = [...new Set(CATALOG.map((p) => p.category))];

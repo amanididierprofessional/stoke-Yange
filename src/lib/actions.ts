@@ -67,11 +67,9 @@ export async function reverseSale(saleId: number) {
     if (p) await db.products.update(p.id!, { stock: p.stock + s.qty, updatedAt: Date.now() });
     await db.movements.add({ productId: s.productId, type: "reverse", qty: s.qty, createdAt: Date.now() });
     await db.sales.update(saleId, { reversed: 1 });
-    await db.debts
-      .where("partyId")
-      .equals(s.partyId ?? -1)
-      .filter((d) => d.saleId === saleId)
-      .delete();
+    const gone = await db.debts.where("partyId").equals(s.partyId ?? -1).filter((d) => d.saleId === saleId).primaryKeys();
+    await db.debts.bulkDelete(gone);
+    for (const id of gone) await db.outbox.add({ op: `del:debts:${id}`, createdAt: Date.now() });
     await queue("reverse");
   });
 }
@@ -91,7 +89,7 @@ export async function deleteProduct(productId: number) {
     const p = await db.products.get(productId);
     if (!p) throw new Error("Product not found");
     await db.products.delete(productId);
-    await queue("productDelete");
+    await queue(`del:products:${productId}`);
   });
 }
 
