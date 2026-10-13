@@ -175,6 +175,12 @@ export async function signUp(opts: {
     }
   }
 
+  // Never report a successful cloud sign-up when the server rejected it.
+  // Offline sign-up remains available, but online cloud failures must be visible.
+  if (cloudBlocked && supabaseConfigured && navigator.onLine) {
+    return { ok: false, error: "cloud_unavailable" };
+  }
+
   // Always persist locally so the shop works offline
   const existing = await getAccount();
   if (existing && existing.identifier !== id) {
@@ -229,7 +235,13 @@ export async function signIn(opts: {
     }
   }
 
-  // 2) Local fallback
+  // A reachable cloud account is authoritative while online. Do not silently
+  // authenticate a local-only account after cloud credentials were rejected.
+  if (supabaseConfigured && client && navigator.onLine) {
+    return { ok: false, error: error ? "bad_password" : "cloud_login_failed" };
+  }
+
+  // 2) Local fallback is for offline use or when cloud has not been configured.
   const account = await getAccount();
   if (!account) return { ok: false, error: "no_account" };
   if (account.loginType !== opts.loginType || account.identifier !== id) {
