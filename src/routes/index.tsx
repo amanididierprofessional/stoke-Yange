@@ -30,11 +30,15 @@ function SellPage() {
   const products = useLiveQuery(() => db.products.orderBy("name").toArray(), []) ?? [];
   const today = useLiveQuery(() => db.sales.where("createdAt").aboveOrEqual(startOfDay()).filter((s) => !s.reversed).toArray(), []) ?? [];
 
+  const allSales = useLiveQuery(() => db.sales.toArray(), []) ?? [];
+  const sold = new Map<number, number>();
+  for (const s of allSales) if (!s.reversed) sold.set(s.productId, (sold.get(s.productId) ?? 0) + s.qty);
   const costValue = products.reduce((a, p) => a + p.stock * p.cost, 0);
   const cash = today.filter((s) => s.type === "cash").reduce((a, s) => a + s.total, 0);
   const credit = today.filter((s) => s.type === "credit").reduce((a, s) => a + s.total, 0);
   const low = products.filter((p) => p.stock <= p.min);
-  const list = products.filter((p) => (cat === "__all" || p.category === cat) && p.name.toLowerCase().includes(q.toLowerCase()));
+  const list = products.filter((p) => (cat === "__all" || p.category === cat) && p.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => (sold.get(b.id!) ?? 0) - (sold.get(a.id!) ?? 0) || a.name.localeCompare(b.name));
   const cats = [...new Set([...CATEGORIES, ...products.map((p) => p.category)])];
 
   return (

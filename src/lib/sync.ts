@@ -5,7 +5,19 @@
 import { db } from "./db";
 import { ensureSupabase, supabaseConfigured } from "./supabase";
 
-export async function trySync(): Promise<{ ok: boolean; reason?: string }> {
+let running: Promise<{ ok: boolean; reason?: string }> | null = null;
+let again = false;
+/** Serialised: one sync at a time; actions during a sync trigger one more pass. */
+export function trySync(): Promise<{ ok: boolean; reason?: string }> {
+  if (running) { again = true; return running; }
+  running = doSync().finally(() => {
+    running = null;
+    if (again) { again = false; trySync().catch(() => {}); }
+  });
+  return running;
+}
+
+async function doSync(): Promise<{ ok: boolean; reason?: string }> {
   if (!supabaseConfigured) return { ok: false, reason: "not_configured" };
   if (!navigator.onLine) return { ok: false, reason: "offline" };
 
@@ -66,6 +78,14 @@ export async function trySync(): Promise<{ ok: boolean; reason?: string }> {
     db.payments.toArray(),
     db.movements.toArray(),
   ]);
+
+  // Propagate local deletions first
+  for (const row of pending) {
+    const m = /^del:(products|debts):(\d+)$/.exec(row.op);
+    if (!m) continue;
+    const { error } = await client.from(m[1]!).delete().eq("user_id", userId).eq("local_id", Number(m[2]));
+    if (error) return { ok: false, reason: error.message };
+  }
 
   if (products.length === 0 && parties.length === 0 && sales.length === 0 && pending.length === 0) {
     return { ok: true };
