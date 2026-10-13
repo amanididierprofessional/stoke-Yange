@@ -10,6 +10,10 @@ export type Product = {
   stock: number;
   min: number;
   emoji: string;
+  /** Optional photo URL */
+  image?: string;
+  /** Optional colour hex (apparel variants) */
+  color?: string;
   updatedAt: number;
 };
 export type SaleType = "cash" | "credit";
@@ -75,23 +79,32 @@ class StokeDB extends Dexie {
 
 export const db = new StokeDB();
 
-export const CATEGORIES = ["Beverages", "Grains & Flour", "Snacks", "Toiletries", "Airtime", "Household"];
+export const CATEGORIES = [
+  "Food",
+  "Cooking",
+  "Seasonings",
+  "Beverages",
+  "Daily use",
+  "School",
+  "Household",
+  "Airtime",
+  "Clothes",
+  "Shoes",
+  "Grains & Flour",
+  "Snacks",
+  "Toiletries",
+];
 export const UNITS = ["pcs", "kg", "pack", "bottle", "crate", "litre"];
 
-/** Icons sellers can pick when adding/editing a product (no demo products are loaded). */
 export const PRODUCT_EMOJIS = [
   "📦", "🥛", "🍺", "🥤", "💧", "🧃", "☕", "🍵",
   "🌾", "🍚", "🍙", "🍞", "🥚", "🧀", "🫒", "🧂",
   "🍪", "🍫", "🍬", "🌶️", "🍎", "🍌", "🥕", "🧅",
   "🧼", "🪥", "🧴", "🧻", "🧽", "🧹",
   "📱", "📶", "🔋", "💡", "🕯️", "🔦",
-  "🍼", "👗", "👟", "✏️", "📒", "🧸",
+  "🍼", "👗", "👟", "✏️", "📒", "🧸", "👕", "👖", "🧥",
 ];
 
-/**
- * First launch: empty shop (no fake products). Seller adds real items.
- * Keeps emoji list available for product cards.
- */
 export async function ensureSeeded() {
   const s = await db.settings.get("initialized");
   if (!s) {
@@ -99,7 +112,6 @@ export async function ensureSeeded() {
   }
 }
 
-/** Optional: load sample Rwanda shop data (Settings → Reload demo). */
 export async function seedDemo() {
   const H = 3600_000;
   const D = 24 * H;
