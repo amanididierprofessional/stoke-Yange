@@ -13,6 +13,7 @@ import {
   WifiOff,
   Zap,
 } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { enterAppMode, isStandalone, preferApp } from "@/lib/app-mode";
 import { cn } from "@/lib/utils";
 
@@ -137,7 +138,6 @@ function WelcomePage() {
   const [busy, setBusy] = useState(false);
   const [isIos, setIsIos] = useState(false);
 
-  // Already running as installed PWA → never show website
   useEffect(() => {
     if (isStandalone()) {
       enterAppMode();
@@ -195,7 +195,6 @@ function WelcomePage() {
       }
       return;
     }
-    // No browser prompt (iOS or already eligible) → enter app; user can add to home from browser menu
     goApp();
   };
 
@@ -214,15 +213,14 @@ function WelcomePage() {
     { n: "3", title: t.s3t, body: t.s3d, icon: Zap },
   ];
 
-  // One button only: Open if already has app, else Install
   const showOpen = installed;
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-foreground">
       <header className="sticky top-0 z-40 border-b border-black/5 bg-[#FAF8F5]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-2 px-4 sm:h-16 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-hero text-lg text-white shadow-card">🏪</span>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <BrandLogo className="size-9 rounded-xl" />
             <span className="truncate text-base font-bold tracking-tight sm:text-lg">Stoke Yange</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -275,7 +273,6 @@ function WelcomePage() {
               {t.heroSub}
             </p>
 
-            {/* Single CTA — Install OR Open, never both */}
             <div className="mt-8 flex justify-center lg:justify-start">
               <button
                 type="button"
@@ -379,7 +376,7 @@ function WelcomePage() {
 
       <section className="border-t border-black/5 bg-white py-14 sm:py-16">
         <div className="mx-auto max-w-lg px-4 text-center sm:px-6">
-          <div className="mx-auto mb-5 grid size-16 place-items-center rounded-3xl bg-hero text-3xl text-white shadow-card">🏪</div>
+          <BrandLogo className="mx-auto mb-5 size-16 rounded-3xl" />
           <h2 className="text-balance text-2xl font-bold tracking-tight">{t.ctaTitle}</h2>
           <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base">{t.ctaSub}</p>
           <div className="mt-8 flex justify-center">
