@@ -13,7 +13,7 @@ import {
   WifiOff,
   Zap,
 } from "lucide-react";
-import { enterAppMode, isStandalone } from "@/lib/app-mode";
+import { enterAppMode, isStandalone, preferApp } from "@/lib/app-mode";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/welcome")({
@@ -46,13 +46,14 @@ const copy = {
     open: "Open app",
     installing: "Installing…",
     iosHint: "On iPhone: Share → Add to Home Screen",
+    androidHint: "Tap Install, or use Chrome menu → Install app",
     featuresTitle: "Everything your shop needs",
     featuresSub: "Short tools. Clear numbers. No clutter.",
     howTitle: "How it works",
     howSub: "Three steps. Ready in minutes.",
     ctaTitle: "Start free today",
     ctaSub: "Install once. Your shop data stays on your phone and syncs when online.",
-    footer: "Stoke Yange · Made for Rwanda shops",
+    footer: "Stoke Yange · Made for your shop",
     contact: "Help",
     f1t: "One-tap sell",
     f1d: "Tap a product. Cash or credit. Done.",
@@ -67,7 +68,7 @@ const copy = {
     f6t: "Cloud backup",
     f6d: "Sign in once. Restore on a new phone.",
     s1t: "Install",
-    s1d: "Add Stoke Yange to your home screen.",
+    s1d: "Add Stoke Yange to your phone.",
     s2t: "Add products",
     s2d: "Use quick defaults or type your own.",
     s3t: "Start selling",
@@ -78,23 +79,25 @@ const copy = {
   },
   rw: {
     badge: "Ubuntu ku bacuruzi",
-    heroTitle: "Gurisha, ububiko n'amadeni — muri porogaramu imwe",
+    heroTitle: "Gurisha, ububiko n'amadeni — muri app imwe",
     heroSub: "Yagenewe iduka nto. Ikora kuri telefone. Ikora nta murandasi.",
-    install: "Shyira porogaramu",
-    open: "Fungura porogaramu",
+    install: "Shyiramo app",
+    open: "Fungura app",
     installing: "Birimo…",
     iosHint: "Kuri iPhone: Share → Add to Home Screen",
+    androidHint: "Kanda Shyiramo, cyangwa menu ya Chrome → Install app",
     featuresTitle: "Ibyo iduka ryawe rikeneye",
     featuresSub: "Ibikoresho byoroshye. Imibare isobanutse.",
     howTitle: "Uko bikora",
-    howSub: "Intambwe eshatu. Umererwa neza mu minota mike.",
+    howSub: "Intambwe eshatu. Umererwa neza vuba.",
     ctaTitle: "Tangira ubuntu uyu munsi",
-    ctaSub: "Shyira rimwe. Amakuru y'iduka aba kuri telefone kandi ajya kuri cloud iyo ufite murandasi.",
-    footer: "Stoke Yange · Yagenewe iduka zo mu Rwanda",
+    ctaSub:
+      "Shyiramo application rimwe maze amakuru y'iduka abikwe kuri telefone yawe kandi ajya kuri cloud iyo ufite murandasi.",
+    footer: "Stoke Yange · Yagenewe iduka ryawe",
     contact: "Ubufasha",
     f1t: "Gurisha byihuse",
     f1d: "Kanda igicuruzwa. Amafaranga cyangwa ideni. Byarangiye.",
-    f2t: "Ububiko bw'ubu",
+    f2t: "Ububiko ufite ubu",
     f2d: "Menya ibisigaye mbere yo kugurisha.",
     f3t: "Igitabo cy'amadeni",
     f3d: "Abakwishyura. Abo ubereyemo.",
@@ -104,8 +107,8 @@ const copy = {
     f5d: "Igurisha ryose ryanditswe. Subiza iyo bikenewe.",
     f6t: "Kopi kuri cloud",
     f6d: "Injira rimwe. Garura kuri telefone nshya.",
-    s1t: "Shyira",
-    s1d: "Ongeraho Stoke Yange ku mugaragaro.",
+    s1t: "Shyiramo",
+    s1d: "Ongeraho Stoke Yange kuri phone.",
     s2t: "Ongeraho ibicuruzwa",
     s2d: "Koresha ibisanzwe cyangwa wandike ibyawe.",
     s3t: "Tangira kugurisha",
@@ -134,7 +137,7 @@ function WelcomePage() {
   const [busy, setBusy] = useState(false);
   const [isIos, setIsIos] = useState(false);
 
-  /** If already in installed PWA, skip marketing → app */
+  // Already running as installed PWA → never show website
   useEffect(() => {
     if (isStandalone()) {
       enterAppMode();
@@ -148,7 +151,8 @@ function WelcomePage() {
   }, [lang]);
 
   useEffect(() => {
-    setInstalled(isStandalone());
+    const hasApp = isStandalone() || preferApp();
+    setInstalled(hasApp);
     const ua = navigator.userAgent;
     setIsIos(/iPad|iPhone|iPod/.test(ua) && !(window as unknown as { MSStream?: unknown }).MSStream);
 
@@ -175,23 +179,24 @@ function WelcomePage() {
   };
 
   const install = async () => {
-    if (!deferred) {
-      goApp();
+    if (deferred) {
+      setBusy(true);
+      try {
+        await deferred.prompt();
+        const { outcome } = await deferred.userChoice;
+        if (outcome === "accepted") {
+          enterAppMode();
+          setInstalled(true);
+          navigate({ to: "/", replace: true });
+        }
+        setDeferred(null);
+      } finally {
+        setBusy(false);
+      }
       return;
     }
-    setBusy(true);
-    try {
-      await deferred.prompt();
-      const { outcome } = await deferred.userChoice;
-      if (outcome === "accepted") {
-        enterAppMode();
-        setInstalled(true);
-        navigate({ to: "/", replace: true });
-      }
-      setDeferred(null);
-    } finally {
-      setBusy(false);
-    }
+    // No browser prompt (iOS or already eligible) → enter app; user can add to home from browser menu
+    goApp();
   };
 
   const features = [
@@ -209,15 +214,18 @@ function WelcomePage() {
     { n: "3", title: t.s3t, body: t.s3d, icon: Zap },
   ];
 
+  // One button only: Open if already has app, else Install
+  const showOpen = installed;
+
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-foreground">
       <header className="sticky top-0 z-40 border-b border-black/5 bg-[#FAF8F5]/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4 sm:h-16 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <span className="grid size-9 place-items-center rounded-xl bg-hero text-lg text-white shadow-card">🏪</span>
-            <span className="text-base font-bold tracking-tight sm:text-lg">Stoke Yange</span>
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-2 px-4 sm:h-16 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-hero text-lg text-white shadow-card">🏪</span>
+            <span className="truncate text-base font-bold tracking-tight sm:text-lg">Stoke Yange</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <div className="flex items-center gap-0.5 rounded-full border bg-white p-0.5 shadow-sm" aria-label={t.lang}>
               <button
                 type="button"
@@ -240,17 +248,15 @@ function WelcomePage() {
                 RW
               </button>
             </div>
-            {!installed && deferred && (
-              <button
-                type="button"
-                onClick={install}
-                disabled={busy}
-                className="hidden h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-xs font-bold text-primary-foreground sm:inline-flex"
-              >
-                <Download className="size-3.5" />
-                {busy ? t.installing : t.install}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={showOpen ? goApp : install}
+              disabled={busy}
+              className="hidden h-9 max-w-[9.5rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex"
+            >
+              {showOpen ? <Smartphone className="size-3.5 shrink-0" /> : <Download className="size-3.5 shrink-0" />}
+              <span className="truncate">{busy ? t.installing : showOpen ? t.open : t.install}</span>
+            </button>
           </div>
         </div>
       </header>
@@ -258,50 +264,33 @@ function WelcomePage() {
       <section className="mx-auto max-w-5xl px-4 pb-12 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
           <div className="text-center lg:text-left">
-            <p className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              <Shield className="size-3.5" />
-              {t.badge}
+            <p className="mb-4 inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              <Shield className="size-3.5 shrink-0" />
+              <span className="truncate">{t.badge}</span>
             </p>
-            <h1 className="text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl lg:text-[2.75rem]">
+            <h1 className="text-balance text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl lg:text-[2.5rem]">
               {t.heroTitle}
             </h1>
-            <p className="mx-auto mt-4 max-w-md text-base text-muted-foreground sm:text-lg lg:mx-0">{t.heroSub}</p>
-            <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center lg:justify-start">
-              {deferred && !installed ? (
-                <button
-                  type="button"
-                  onClick={install}
-                  disabled={busy}
-                  className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-bold text-primary-foreground shadow-card disabled:opacity-70"
-                >
-                  <Download className="size-5" />
-                  {busy ? t.installing : t.install}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={goApp}
-                  className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-bold text-primary-foreground shadow-card"
-                >
-                  <Smartphone className="size-5" />
-                  {t.open}
-                </button>
-              )}
+            <p className="mx-auto mt-4 max-w-md text-pretty text-base leading-snug text-muted-foreground sm:text-lg lg:mx-0">
+              {t.heroSub}
+            </p>
+
+            {/* Single CTA — Install OR Open, never both */}
+            <div className="mt-8 flex justify-center lg:justify-start">
               <button
                 type="button"
-                onClick={goApp}
-                className="inline-flex h-13 items-center justify-center rounded-full border border-black/10 bg-white px-8 text-base font-semibold text-foreground shadow-sm"
+                onClick={showOpen ? goApp : install}
+                disabled={busy}
+                className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground shadow-card disabled:opacity-70 sm:w-auto sm:min-w-[12rem]"
               >
-                {t.open}
+                {showOpen ? <Smartphone className="size-5 shrink-0" /> : <Download className="size-5 shrink-0" />}
+                <span className="text-center">{busy ? t.installing : showOpen ? t.open : t.install}</span>
               </button>
             </div>
-            {isIos && !installed && <p className="mt-4 text-xs text-muted-foreground">{t.iosHint}</p>}
-            {!deferred && !installed && !isIos && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                {lang === "en"
-                  ? "Open in Chrome or Edge on Android to install."
-                  : "Fungura muri Chrome cyangwa Edge kuri Android kugira ngo ushyire."}
-              </p>
+
+            {!showOpen && isIos && <p className="mt-4 text-pretty text-xs leading-snug text-muted-foreground">{t.iosHint}</p>}
+            {!showOpen && !isIos && !deferred && (
+              <p className="mt-3 text-pretty text-xs leading-snug text-muted-foreground">{t.androidHint}</p>
             )}
           </div>
 
@@ -313,11 +302,11 @@ function WelcomePage() {
                 <p className="mt-1 text-3xl font-bold tabular-nums">12,500 RWF</p>
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <div className="rounded-2xl bg-white/15 p-3">
-                    <p className="text-[10px] opacity-90">{lang === "en" ? "Stock value" : "Agaciro k'ububiko"}</p>
+                    <p className="text-[10px] leading-tight opacity-90">{lang === "en" ? "Stock value" : "Agaciro k'ububiko"}</p>
                     <p className="font-bold tabular-nums">84,000</p>
                   </div>
                   <div className="rounded-2xl bg-white/15 p-3">
-                    <p className="text-[10px] opacity-90">{lang === "en" ? "Credit today" : "Amadeni"}</p>
+                    <p className="text-[10px] leading-tight opacity-90">{lang === "en" ? "Credit today" : "Amadeni"}</p>
                     <p className="font-bold tabular-nums">3,200</p>
                   </div>
                 </div>
@@ -339,8 +328,8 @@ function WelcomePage() {
       <section className="border-t border-black/5 bg-white py-14 sm:py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="mx-auto max-w-xl text-center">
-            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{t.featuresTitle}</h2>
-            <p className="mt-2 text-muted-foreground">{t.featuresSub}</p>
+            <h2 className="text-balance text-2xl font-bold tracking-tight sm:text-3xl">{t.featuresTitle}</h2>
+            <p className="mt-2 text-pretty text-muted-foreground">{t.featuresSub}</p>
           </div>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {features.map(({ icon: Icon, title, body, tone }) => (
@@ -348,8 +337,8 @@ function WelcomePage() {
                 <div className={cn("mb-4 grid size-12 place-items-center rounded-2xl", tone)}>
                   <Icon className="size-6" strokeWidth={2} />
                 </div>
-                <h3 className="text-base font-bold">{title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+                <h3 className="text-balance text-base font-bold leading-snug">{title}</h3>
+                <p className="mt-1.5 text-pretty text-sm leading-relaxed text-muted-foreground">{body}</p>
               </article>
             ))}
           </div>
@@ -361,27 +350,27 @@ function WelcomePage() {
           <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-white/10">
             <WifiOff className="size-7" />
           </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-bold">{t.offlineTitle}</h2>
-            <p className="mt-1 text-sm text-white/70 sm:text-base">{t.offlineBody}</p>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-balance text-xl font-bold">{t.offlineTitle}</h2>
+            <p className="mt-1 text-pretty text-sm text-white/70 sm:text-base">{t.offlineBody}</p>
           </div>
-          <Languages className="hidden size-10 opacity-30 sm:block" />
+          <Languages className="hidden size-10 shrink-0 opacity-30 sm:block" />
         </div>
       </section>
 
       <section className="py-14 sm:py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="mx-auto max-w-xl text-center">
-            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{t.howTitle}</h2>
-            <p className="mt-2 text-muted-foreground">{t.howSub}</p>
+            <h2 className="text-balance text-2xl font-bold tracking-tight sm:text-3xl">{t.howTitle}</h2>
+            <p className="mt-2 text-pretty text-muted-foreground">{t.howSub}</p>
           </div>
           <div className="mt-10 grid gap-6 sm:grid-cols-3">
             {steps.map(({ n, title, body, icon: Icon }) => (
               <div key={n} className="rounded-3xl border border-black/5 bg-white p-6 text-center shadow-sm">
                 <span className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-primary text-lg font-bold text-primary-foreground">{n}</span>
                 <Icon className="mx-auto mb-3 size-6 text-primary" />
-                <h3 className="font-bold">{title}</h3>
-                <p className="mt-1.5 text-sm text-muted-foreground">{body}</p>
+                <h3 className="text-balance font-bold leading-snug">{title}</h3>
+                <p className="mt-1.5 text-pretty text-sm leading-relaxed text-muted-foreground">{body}</p>
               </div>
             ))}
           </div>
@@ -391,37 +380,26 @@ function WelcomePage() {
       <section className="border-t border-black/5 bg-white py-14 sm:py-16">
         <div className="mx-auto max-w-lg px-4 text-center sm:px-6">
           <div className="mx-auto mb-5 grid size-16 place-items-center rounded-3xl bg-hero text-3xl text-white shadow-card">🏪</div>
-          <h2 className="text-2xl font-bold tracking-tight">{t.ctaTitle}</h2>
-          <p className="mt-2 text-sm text-muted-foreground sm:text-base">{t.ctaSub}</p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            {deferred && !installed ? (
-              <button
-                type="button"
-                onClick={install}
-                disabled={busy}
-                className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-bold text-primary-foreground"
-              >
-                <Download className="size-5" />
-                {busy ? t.installing : t.install}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={goApp}
-                className="inline-flex h-13 items-center justify-center gap-2 rounded-full bg-primary px-8 text-base font-bold text-primary-foreground"
-              >
-                <Smartphone className="size-5" />
-                {t.open}
-              </button>
-            )}
+          <h2 className="text-balance text-2xl font-bold tracking-tight">{t.ctaTitle}</h2>
+          <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base">{t.ctaSub}</p>
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={showOpen ? goApp : install}
+              disabled={busy}
+              className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground sm:w-auto"
+            >
+              {showOpen ? <Smartphone className="size-5 shrink-0" /> : <Download className="size-5 shrink-0" />}
+              <span>{busy ? t.installing : showOpen ? t.open : t.install}</span>
+            </button>
           </div>
         </div>
       </section>
 
       <footer className="border-t border-black/5 py-8">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-4 text-center text-xs text-muted-foreground sm:flex-row sm:px-6 sm:text-left">
-          <p>{t.footer}</p>
-          <p>
+          <p className="text-pretty">{t.footer}</p>
+          <p className="text-pretty">
             {t.contact}:{" "}
             <a href="tel:0796919900" className="font-medium text-primary underline-offset-2 hover:underline">
               0796919900
