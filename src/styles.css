@@ -126,3 +126,28 @@
 @utility bg-hero { background-image: var(--gradient-hero); }
 @utility shadow-card { box-shadow: var(--shadow-card); }
 @utility no-scrollbar { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }
+
+
+/* Premium Stoke Yange four-dot loading indicator */
+.sy-loading-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 9999px;
+  background: oklch(0.78 0.16 55);
+  box-shadow: 0 1px 4px oklch(0.55 0.16 45 / 0.18);
+  transform: scale(0.72);
+  opacity: 0.45;
+  animation: sy-dot-pulse 0.84s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.sy-loading-dot:nth-child(2) { background: oklch(0.72 0.18 48); }
+.sy-loading-dot:nth-child(3) { background: oklch(0.66 0.19 43); }
+.sy-loading-dot:nth-child(4) { background: oklch(0.60 0.20 38); }
+@keyframes sy-dot-pulse {
+  0%, 100% { transform: scale(0.72); opacity: 0.45; }
+  45% { transform: scale(1.22); opacity: 1; background: oklch(0.65 0.22 38); box-shadow: 0 0 0 4px oklch(0.72 0.18 48 / 0.12), 0 2px 8px oklch(0.55 0.16 45 / 0.24); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sy-loading-dot { animation-duration: 1.8s; }
+}
