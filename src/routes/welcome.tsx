@@ -392,16 +392,25 @@ function WelcomePage() {
       <footer className="border-t border-black/5 py-8">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-4 text-center text-xs text-muted-foreground sm:flex-row sm:px-6 sm:text-left">
           <p className="text-pretty">{t.footer}</p>
-          <p className="text-pretty">
-            {t.contact}:{" "}
-            <a href="tel:0796919900" className="font-medium text-primary underline-offset-2 hover:underline">
-              0796919900
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end" aria-label={t.contact}>
+            <span className="mr-1 font-medium">{t.contact}:</span>
+            <a
+              href="tel:0796919900"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-primary/25 bg-primary/5 px-4 py-2 font-semibold text-primary shadow-sm transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              <Smartphone className="size-4" />
+              Call support
             </a>
-            {" · "}
-            <a href="https://wa.me/250796919900" target="_blank" rel="noreferrer" className="font-medium text-primary underline-offset-2 hover:underline">
-              WhatsApp
+            <a
+              href="https://wa.me/250796919900"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[#128C7E] px-4 py-2 font-semibold text-white shadow-sm transition-colors hover:bg-[#0E766B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#128C7E] focus-visible:ring-offset-2"
+            >
+              <span aria-hidden="true" className="text-base">◉</span>
+              Chat on WhatsApp
             </a>
-          </p>
+          </div>
         </div>
       </footer>
     </div>
