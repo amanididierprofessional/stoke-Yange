@@ -105,7 +105,15 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     }
     if (mode === "login") {
       setBusy(true);
-      const res = await signIn({ loginType: tab, identifier, password });
+      let res: Awaited<ReturnType<typeof signIn>>;
+      try {
+        res = await signIn({ loginType: tab, identifier, password });
+      } catch (error) {
+        console.error("[auth-ui] sign in failed", error);
+        setBusy(false);
+        toast.error("Could not finish signing in. Check your connection and try again.");
+        return;
+      }
       setBusy(false);
       if (!res.ok) {
         if (res.error === "no_account" || res.error === "mismatch") {
