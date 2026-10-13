@@ -3,10 +3,13 @@
  * Sign-up ALWAYS saves locally; cloud errors never block creating the shop account
  * except "user already registered" → tell them to sign in.
  * Passwords: auth.users only (never profiles).
+ *
+ * Sign-in (online): verifies password against Supabase Auth, then loads THAT user's
+ * shop from the database (not whatever was left on the phone).
  */
 import { db, factoryReset } from "./db";
 import { ensureSupabase, supabase, supabaseConfigured } from "./supabase";
-import { pullFromCloud, trySync } from "./sync";
+import { clearShopTables, pullFromCloud, trySync } from "./sync";
 
 export type Account = {
   loginType: "phone" | "email";
@@ -146,7 +149,6 @@ export async function signUp(opts: {
         if (/password/i.test(msg) && /6|least|characters/i.test(msg)) {
           return { ok: false, error: "password_short" };
         }
-        // Other cloud errors: still allow local account (offline-first)
         cloudBlocked = true;
       } else {
         if (!data.session) {
@@ -175,13 +177,10 @@ export async function signUp(opts: {
     }
   }
 
-  // Never report a successful cloud sign-up when the server rejected it.
-  // Offline sign-up remains available, but online cloud failures must be visible.
   if (cloudBlocked && supabaseConfigured && navigator.onLine) {
     return { ok: false, error: "cloud_unavailable" };
   }
 
-  // Always persist locally so the shop works offline
   const existing = await getAccount();
   if (existing && existing.identifier !== id) {
     await factoryReset(false);
@@ -190,10 +189,6 @@ export async function signUp(opts: {
   setLoggedIn(true);
   trySync().catch(() => {});
 
-  if (cloudBlocked) {
-    // Local ok; soft-warn via special code (UI can show message but still enter app)
-    return { ok: true };
-  }
   return { ok: true };
 }
 
@@ -208,7 +203,7 @@ export async function signIn(opts: {
   const client = await ensureSupabase();
   const email = opts.loginType === "email" ? id : syntheticEmail(id);
 
-  // 1) Cloud first when online
+  // 1) Cloud first when online — password checked against auth.users
   if (supabaseConfigured && client && navigator.onLine) {
     const { data, error } = await client.auth.signInWithPassword({ email, password: opts.password });
     if (error) {
@@ -216,32 +211,56 @@ export async function signIn(opts: {
     }
     if (data?.session?.user) {
       const uid = data.session.user.id;
+      const prev = await getAccount();
+      const sameUser =
+        !!prev &&
+        (prev.supabaseUserId === uid ||
+          (prev.loginType === opts.loginType && prev.identifier === id));
+
+      // Different account than what's on this phone → drop local shop data
+      // so we don't show another user's (or leftover) products
+      if (!sameUser) {
+        await clearShopTables();
+      }
+
       const passwordHash = await sha256(opts.password);
       let account: Account = {
         loginType: opts.loginType,
         identifier: id,
         passwordHash,
-        fullName: "",
-        businessName: "Iduka Ryanjye",
-        age: "",
-        createdAt: Date.now(),
+        fullName: prev && sameUser ? prev.fullName : "",
+        businessName: prev && sameUser ? prev.businessName : "Iduka Ryanjye",
+        age: prev && sameUser ? prev.age : "",
+        createdAt: prev && sameUser ? prev.createdAt : Date.now(),
         supabaseUserId: uid,
       };
       account = await applyProfileFromCloud(account, uid, data.session.user.email);
       setLoggedIn(true);
-      await pullFromCloud().catch((e) => console.warn("[auth] pull", e));
-      trySync().catch(() => {});
+
+      // Always download this user's cloud shop when local is empty OR account switched.
+      // Same user with local data: keep offline-first (push later).
+      const localCount = await db.products.count();
+      const mustPull = !sameUser || localCount === 0;
+      if (mustPull) {
+        const pull = await pullFromCloud({ force: true }).catch((e) => {
+          console.warn("[auth] pull", e);
+          return { ok: false as const, reason: String(e) };
+        });
+        console.info("[auth] pullFromCloud", pull);
+      } else {
+        // Same phone, same user — upload any offline changes
+        trySync().catch(() => {});
+      }
       return { ok: true };
     }
   }
 
-  // A reachable cloud account is authoritative while online. Do not silently
-  // authenticate a local-only account after cloud credentials were rejected.
+  // Online + Supabase configured: wrong password / unknown user → do not fall back to local
   if (supabaseConfigured && client && navigator.onLine) {
     return { ok: false, error: "bad_password" };
   }
 
-  // 2) Local fallback is for offline use or when cloud has not been configured.
+  // 2) Offline / no cloud: local password only
   const account = await getAccount();
   if (!account) return { ok: false, error: "no_account" };
   if (account.loginType !== opts.loginType || account.identifier !== id) {
@@ -251,14 +270,6 @@ export async function signIn(opts: {
   if (hash !== account.passwordHash) return { ok: false, error: "bad_password" };
 
   setLoggedIn(true);
-  if (supabaseConfigured && client && navigator.onLine) {
-    try {
-      await client.auth.signInWithPassword({ email, password: opts.password });
-      trySync().catch(() => {});
-    } catch {
-      /* */
-    }
-  }
   return { ok: true };
 }
 

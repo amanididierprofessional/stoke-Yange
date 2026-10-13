@@ -1,20 +1,44 @@
 /**
  * Offline-first sync: push Dexie → Supabase when online + signed in.
- * pullFromCloud: restore products/sales/etc. after cloud login on empty device.
+ * pullFromCloud: restore products/sales/etc. after cloud login.
  */
 import { db } from "./db";
 import { ensureSupabase, supabaseConfigured } from "./supabase";
 
 let running: Promise<{ ok: boolean; reason?: string }> | null = null;
 let again = false;
+
 /** Serialised: one sync at a time; actions during a sync trigger one more pass. */
 export function trySync(): Promise<{ ok: boolean; reason?: string }> {
-  if (running) { again = true; return running; }
+  if (running) {
+    again = true;
+    return running;
+  }
   running = doSync().finally(() => {
     running = null;
-    if (again) { again = false; trySync().catch(() => {}); }
+    if (again) {
+      again = false;
+      trySync().catch(() => {});
+    }
   });
   return running;
+}
+
+/** Clear shop tables only (not settings/account) before loading another user's cloud data. */
+export async function clearShopTables() {
+  await db.transaction(
+    "rw",
+    [db.products, db.parties, db.sales, db.debts, db.payments, db.movements, db.outbox],
+    async () => {
+      await db.products.clear();
+      await db.parties.clear();
+      await db.sales.clear();
+      await db.debts.clear();
+      await db.payments.clear();
+      await db.movements.clear();
+      await db.outbox.clear();
+    },
+  );
 }
 
 async function doSync(): Promise<{ ok: boolean; reason?: string }> {
@@ -69,7 +93,6 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
   }
 
   const pending = await db.outbox.orderBy("createdAt").toArray();
-  // Still push full snapshot when outbox has work OR always push if we have local data
   const [products, parties, sales, debts, payments, movements] = await Promise.all([
     db.products.toArray(),
     db.parties.toArray(),
@@ -79,7 +102,6 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
     db.movements.toArray(),
   ]);
 
-  // Propagate local deletions first
   for (const row of pending) {
     const m = /^del:(products|debts):(\d+)$/.exec(row.op);
     if (!m) continue;
@@ -207,8 +229,14 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
   return { ok: true };
 }
 
-/** After cloud login on empty device: download user's rows into Dexie. */
-export async function pullFromCloud(): Promise<{ ok: boolean; reason?: string }> {
+/**
+ * Download this user's shop from Supabase into Dexie.
+ * force=true: clear local shop tables and replace (used after sign-in / account switch).
+ * force=false: only pull when local shop is empty (same device offline-first).
+ */
+export async function pullFromCloud(opts?: {
+  force?: boolean;
+}): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
   if (!supabaseConfigured || !navigator.onLine) return { ok: false, reason: "offline" };
   const client = await ensureSupabase();
   if (!client) return { ok: false, reason: "not_configured" };
@@ -217,13 +245,12 @@ export async function pullFromCloud(): Promise<{ ok: boolean; reason?: string }>
   const userId = sess.session?.user?.id;
   if (!userId) return { ok: false, reason: "no_session" };
 
+  const force = opts?.force === true;
   const localCount = await db.products.count();
-  // Only full-replace when local shop is empty (avoid wiping newer local work)
-  if (localCount > 0) return { ok: true, reason: "local_has_data" };
+  if (!force && localCount > 0) return { ok: true, reason: "local_has_data", pulled: 0 };
 
   const { data: products, error: pe } = await client.from("products").select("*").eq("user_id", userId);
   if (pe) return { ok: false, reason: pe.message };
-  if (!products?.length) return { ok: true };
 
   const { data: parties } = await client.from("parties").select("*").eq("user_id", userId);
   const { data: sales } = await client.from("sales").select("*").eq("user_id", userId);
@@ -231,13 +258,14 @@ export async function pullFromCloud(): Promise<{ ok: boolean; reason?: string }>
   const { data: payments } = await client.from("payments").select("*").eq("user_id", userId);
   const { data: movements } = await client.from("movements").select("*").eq("user_id", userId);
 
-  await db.transaction("rw", [db.products, db.parties, db.sales, db.debts, db.payments, db.movements], async () => {
+  await db.transaction("rw", [db.products, db.parties, db.sales, db.debts, db.payments, db.movements, db.outbox], async () => {
     await db.products.clear();
     await db.parties.clear();
     await db.sales.clear();
     await db.debts.clear();
     await db.payments.clear();
     await db.movements.clear();
+    if (force) await db.outbox.clear();
 
     if (products?.length) {
       await db.products.bulkAdd(
@@ -319,5 +347,5 @@ export async function pullFromCloud(): Promise<{ ok: boolean; reason?: string }>
     }
   });
 
-  return { ok: true };
+  return { ok: true, pulled: products?.length ?? 0 };
 }
