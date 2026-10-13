@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Phone, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { db, factoryReset } from "@/lib/db";
@@ -295,16 +295,29 @@ function SettingsPage() {
         </div>
       )}
 
-      <p className="text-center text-[11px] text-muted-foreground">
-        {t("contactDev")}{" "}
-        <a href="tel:0796919900" className="underline-offset-2 hover:underline">
-          0796919900
-        </a>
-        {" · "}
-        <a href="https://wa.me/250796919900" target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
-          WhatsApp
-        </a>
-      </p>
+      <section className="rounded-2xl border bg-card px-3 py-2.5">
+        <p className="mb-2 text-center text-[11px] text-muted-foreground">{t("contactDev")}</p>
+        <div className="flex items-center justify-center gap-2">
+          <a
+            href="tel:0796919900"
+            aria-label="Call Stoke Yange support"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <Phone className="size-3.5" />
+            Call
+          </a>
+          <a
+            href="https://wa.me/250796919900"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Chat with Stoke Yange support on WhatsApp"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[#128C7E] px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <MessageCircle className="size-3.5" />
+            WhatsApp
+          </a>
+        </div>
+      </section>
     </div>
   );
 }
