@@ -8,6 +8,7 @@ import { isLoggedIn } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { AuthWelcome } from "@/components/AuthWelcome";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export function useShopName() {
   return useLiveQuery(() => db.settings.get("shopName"), [])?.value ?? "Iduka Ryanjye";
@@ -25,7 +26,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
-  /** Marketing site — full width, no app chrome / auth gate */
   const isLanding = path === "/welcome" || path.startsWith("/welcome/");
 
   const onAuthed = useCallback(() => setAuthed(true), []);
@@ -80,7 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!ready) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
-        <div className="mb-6 grid size-16 place-items-center rounded-3xl bg-hero text-3xl text-primary-foreground shadow-card">🏪</div>
+        <BrandLogo className="mb-6 size-16 rounded-3xl" />
         <p className="mb-3 text-sm font-semibold text-foreground">Stoke Yange</p>
         <div className="h-2.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
           <div className="h-full rounded-full bg-primary transition-all duration-300 ease-out" style={{ width: `${bootPct}%` }} />
