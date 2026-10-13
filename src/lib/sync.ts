@@ -9,12 +9,19 @@ let running: Promise<{ ok: boolean; reason?: string }> | null = null;
 let again = false;
 
 /** Serialised: one sync at a time; actions during a sync trigger one more pass. */
-export function trySync(): Promise<{ ok: boolean; reason?: string }> {
+export function trySync(opts?: { force?: boolean }): Promise<{ ok: boolean; reason?: string }> {
   if (running) {
     again = true;
     return running;
   }
-  running = doSync().finally(() => {
+  running = (async () => {
+    // Cloud backup is opt-in: without an explicit automatic choice, sync only on manual request.
+    if (!opts?.force) {
+      const mode = (await db.settings.get("cloudSyncMode"))?.value;
+      if (mode !== "auto") return { ok: false, reason: "manual_mode" };
+    }
+    return doSync();
+  })().finally(() => {
     running = null;
     if (again) {
       again = false;
