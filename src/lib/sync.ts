@@ -65,7 +65,7 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
     });
     if (profileErr) return { ok: false, reason: `profile: ${profileErr.message}` };
   } catch (e) {
-    console.warn("[sync] profile", e);
+    return { ok: false, reason: `profile: ${String(e)}` };
   }
 
   const pending = await db.outbox.orderBy("createdAt").toArray();
