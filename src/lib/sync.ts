@@ -7,11 +7,13 @@ import { ensureSupabase, supabaseConfigured } from "./supabase";
 
 let running: Promise<{ ok: boolean; reason?: string }> | null = null;
 let again = false;
+let forceAgain = false;
 
 /** Serialised: one sync at a time; actions during a sync trigger one more pass. */
 export function trySync(opts?: { force?: boolean }): Promise<{ ok: boolean; reason?: string }> {
   if (running) {
     again = true;
+    if (opts?.force) forceAgain = true;
     return running;
   }
   running = (async () => {
@@ -25,7 +27,9 @@ export function trySync(opts?: { force?: boolean }): Promise<{ ok: boolean; reas
     running = null;
     if (again) {
       again = false;
-      trySync().catch(() => {});
+      const force = forceAgain;
+      forceAgain = false;
+      trySync({ force }).catch(() => {});
     }
   });
   return running;
