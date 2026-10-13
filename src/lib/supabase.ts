@@ -1,6 +1,7 @@
 /**
- * Supabase client — MUST be ready before auth/sync.
- * Uses static import so client exists immediately (not a delayed dynamic import).
+ * Supabase client.
+ * WITHOUT VITE_SUPABASE_ANON_KEY baked into the Vercel build, cloud is OFF.
+ * URL defaults to your project; only the anon key is required on Vercel.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -15,11 +16,12 @@ function pickEnv(...names: string[]): string | undefined {
   return undefined;
 }
 
-const url =
+export const supabaseUrl =
   pickEnv("VITE_SUPABASE_URL", "SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL") || DEFAULT_URL;
 
-const key = pickEnv(
+export const supabaseAnonKey = pickEnv(
   "VITE_SUPABASE_ANON_KEY",
+  "VITE_SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_ANON_KEY",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_PUBLISHABLE_KEY",
@@ -27,10 +29,10 @@ const key = pickEnv(
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY",
 );
 
-export const supabaseConfigured = Boolean(url && key);
+export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase: SupabaseClient | null = supabaseConfigured
-  ? createClient(url, key!, {
+  ? createClient(supabaseUrl, supabaseAnonKey!, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -39,7 +41,91 @@ export const supabase: SupabaseClient | null = supabaseConfigured
     })
   : null;
 
-/** Always resolves; use before auth/sync so we never hit a null client race. */
+if (typeof window !== "undefined") {
+  if (!supabaseConfigured) {
+    console.warn(
+      "[Stoke Yange] Supabase OFF — set VITE_SUPABASE_ANON_KEY on Vercel and Redeploy. URL:",
+      supabaseUrl,
+    );
+  } else {
+    console.info("[Stoke Yange] Supabase client ready:", supabaseUrl);
+  }
+}
+
 export async function ensureSupabase(): Promise<SupabaseClient | null> {
   return supabase;
+}
+
+export type CloudHealth = {
+  configured: boolean;
+  online: boolean;
+  url: string;
+  hasKey: boolean;
+  session: boolean;
+  userId?: string;
+  profileOk: boolean;
+  productsTableOk: boolean;
+  message: string;
+};
+
+/** Call from Settings to see exactly why cloud is not working. */
+export async function checkCloudHealth(): Promise<CloudHealth> {
+  const base: CloudHealth = {
+    configured: supabaseConfigured,
+    online: typeof navigator !== "undefined" ? navigator.onLine : false,
+    url: supabaseUrl,
+    hasKey: Boolean(supabaseAnonKey),
+    session: false,
+    profileOk: false,
+    productsTableOk: false,
+    message: "",
+  };
+
+  if (!supabaseConfigured || !supabase) {
+    base.message =
+      "NO KEY: Add VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables, then Redeploy.";
+    return base;
+  }
+  if (!base.online) {
+    base.message = "Device is offline — cloud needs internet.";
+    return base;
+  }
+
+  try {
+    const { data: sess, error: se } = await supabase.auth.getSession();
+    if (se) {
+      base.message = `Auth error: ${se.message}`;
+      return base;
+    }
+    base.session = !!sess.session;
+    base.userId = sess.session?.user?.id;
+
+    // Probe profiles table
+    const { error: pe } = await supabase.from("profiles").select("id").limit(1);
+    if (pe) {
+      base.message = `profiles table: ${pe.message}. Run supabase/schema.sql in SQL Editor.`;
+      return base;
+    }
+    base.profileOk = true;
+
+    // Probe products table (must exist for shop sync)
+    const { error: prodE } = await supabase.from("products").select("id").limit(1);
+    if (prodE) {
+      base.message = `products table missing: ${prodE.message}. Run full supabase/schema.sql.`;
+      return base;
+    }
+    base.productsTableOk = true;
+
+    if (!base.session) {
+      base.message =
+        "Key + tables OK, but not signed into cloud. Sign up / Sign in while online (password ≥ 6 chars). Confirm email must be OFF in Supabase Auth.";
+      return base;
+    }
+
+    base.message = "Cloud OK — session active, tables reachable.";
+    return base;
+  } catch (e) {
+    base.message = `Connection failed: ${String(e)}`;
+    return base;
+  }
 }

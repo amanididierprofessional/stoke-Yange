@@ -6,8 +6,17 @@ import { Input } from "@/components/ui/input";
 import { db, factoryReset } from "@/lib/db";
 import { useI18n } from "@/lib/i18n";
 import { useShopName } from "@/components/AppShell";
-import { clearSessionOnly, getAccount, isLoggedIn, signOutLocal, wipeCloudData, type Account } from "@/lib/auth";
+import {
+  clearSessionOnly,
+  getAccount,
+  isLoggedIn,
+  signOutLocal,
+  wipeCloudData,
+  type Account,
+} from "@/lib/auth";
+import { checkCloudHealth, type CloudHealth } from "@/lib/supabase";
 import { exportPdfReport } from "@/lib/report";
+import { trySync } from "@/lib/sync";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -29,6 +38,9 @@ function SettingsPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState<CloudHealth | null>(null);
+  const [checking, setChecking] = useState(false);
+
   useEffect(() => setName(shop), [shop]);
 
   useEffect(() => {
@@ -39,6 +51,26 @@ function SettingsPage() {
       }
       setAccount(await getAccount());
     })();
+  }, []);
+
+  const runHealth = async () => {
+    setChecking(true);
+    try {
+      const h = await checkCloudHealth();
+      setHealth(h);
+      if (h.session) {
+        const sync = await trySync();
+        if (!sync.ok && sync.reason) {
+          setHealth({ ...h, message: `${h.message} · Sync: ${sync.reason}` });
+        }
+      }
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    runHealth();
   }, []);
 
   const stamp = new Date().toISOString().slice(0, 10);
@@ -76,7 +108,6 @@ function SettingsPage() {
     }
   };
 
-  /** Clear app data only — single wipe, no double factoryReset */
   const resetAppOnly = async () => {
     setBusy(true);
     try {
@@ -92,7 +123,6 @@ function SettingsPage() {
     }
   };
 
-  /** Clear app + cloud (cloud has 6s timeout so phone never hangs) */
   const resetFull = async () => {
     setBusy(true);
     try {
@@ -116,7 +146,38 @@ function SettingsPage() {
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">{t("settings")}</h2>
 
-      {/* Top card: name + editable shop + currency + language (no phone, no age) */}
+      {/* Cloud diagnostic — shows the real reason sync fails */}
+      <section className="space-y-2 rounded-2xl border border-primary/20 bg-card p-4 shadow-card">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-bold">Cloud / Supabase</p>
+          <button
+            type="button"
+            disabled={checking}
+            onClick={runHealth}
+            className="h-8 rounded-full border px-3 text-xs font-semibold"
+          >
+            {checking ? t("pleaseWait") : "Check"}
+          </button>
+        </div>
+        {health && (
+          <div className="space-y-1 text-xs">
+            <p>
+              Key: <b className={health.hasKey ? "text-success" : "text-destructive"}>{health.hasKey ? "YES" : "NO"}</b>
+              {" · "}Tables:{" "}
+              <b className={health.productsTableOk ? "text-success" : "text-destructive"}>
+                {health.productsTableOk ? "OK" : "MISSING"}
+              </b>
+              {" · "}Session:{" "}
+              <b className={health.session ? "text-success" : "text-muted-foreground"}>{health.session ? "ON" : "OFF"}</b>
+            </p>
+            <p className="leading-snug text-muted-foreground">{health.message}</p>
+            {health.userId && (
+              <p className="truncate text-[10px] text-muted-foreground">user: {health.userId}</p>
+            )}
+          </div>
+        )}
+      </section>
+
       <section className="space-y-3 rounded-2xl bg-card p-4 shadow-card">
         {account && (
           <div>
@@ -244,7 +305,6 @@ function SettingsPage() {
           WhatsApp
         </a>
       </p>
-      <p className="text-center text-xs text-muted-foreground">Stoke Yange · offline-first · auto-sync when online</p>
     </div>
   );
 }
