@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
@@ -225,16 +226,16 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
 
         <div className="p-5">
           <div className="mb-4 text-center">
-            <div className="mx-auto mb-2 grid size-12 place-items-center rounded-2xl bg-hero text-xl text-primary-foreground">🏪</div>
+            <BrandLogo className="mx-auto mb-3 size-16 rounded-2xl" />
             <h2 className="text-lg font-bold">
-              {mode === "recover" ? t("recoverTitle") : mode === "login" ? t("signIn") : t("signUp")}
+              {welcome ? t("welcomeBtn") : mode === "recover" ? t("recoverTitle") : mode === "login" ? t("signIn") : t("signUp")}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
+              {welcome ? "Murakaza neza! Your shop is opening…" : mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
             </p>
           </div>
 
-          {mode !== "recover" && (
+          {!welcome && mode !== "recover" && (
             <div className="mb-4 grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
               <button
                 type="button"
@@ -259,7 +260,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             </div>
           )}
 
-          {step === 1 && mode !== "recover" && (
+          {!welcome && step === 1 && mode !== "recover" && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
                 {(["phone", "email"] as const).map((k) => (
@@ -310,9 +311,9 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
                   welcome ? "bg-success" : "bg-primary",
                 )}
               >
-                {welcome ? t("welcomeBtn") : mode === "login" ? t("signIn") : t("continue")}
+                {busy ? <PremiumDots label="Signing in…" /> : mode === "login" ? t("signIn") : t("continue")}
               </button>
-              {mode === "login" && (
+              {mode === "login" && !busy && (
                 <button type="button" className="w-full text-center text-xs font-medium text-primary" onClick={goRecover}>
                   {t("forgotPassword")}
                 </button>
@@ -357,12 +358,26 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           )}
 
           {welcome && (
-            <button type="button" className="h-12 w-full rounded-full bg-success font-bold text-white">
-              {t("welcomeBtn")}
-            </button>
+            <div className="flex flex-col items-center gap-3 py-5" role="status" aria-live="polite">
+              <div className="rounded-full bg-primary/10 p-4"><PremiumDots /></div>
+              <p className="text-sm font-semibold text-foreground">Murakaza neza!</p>
+              <p className="text-center text-xs text-muted-foreground">Your shop is ready. Taking you in now.</p>
+            </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+
+function PremiumDots({ label }: { label?: string }) {
+  return (
+    <span className="inline-flex items-center justify-center gap-1.5" aria-label={label ?? "Loading"}>
+      {[0, 1, 2, 3].map((dot) => (
+        <span key={dot} className="sy-loading-dot" style={{ animationDelay: `${dot * 140}ms` }} />
+      ))}
+      {label && <span className="ml-2">{label}</span>}
+    </span>
   );
 }
