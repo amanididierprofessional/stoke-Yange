@@ -249,14 +249,23 @@ export async function pullFromCloud(opts?: {
   const localCount = await db.products.count();
   if (!force && localCount > 0) return { ok: true, reason: "local_has_data", pulled: 0 };
 
-  const { data: products, error: pe } = await client.from("products").select("*").eq("user_id", userId);
-  if (pe) return { ok: false, reason: pe.message };
-
-  const { data: parties } = await client.from("parties").select("*").eq("user_id", userId);
-  const { data: sales } = await client.from("sales").select("*").eq("user_id", userId);
-  const { data: debts } = await client.from("debts").select("*").eq("user_id", userId);
-  const { data: payments } = await client.from("payments").select("*").eq("user_id", userId);
-  const { data: movements } = await client.from("movements").select("*").eq("user_id", userId);
+  // Fetch all shop tables concurrently to reduce sign-in round-trips.
+  const [productRes, partyRes, saleRes, debtRes, paymentRes, movementRes] = await Promise.all([
+    client.from("products").select("*").eq("user_id", userId),
+    client.from("parties").select("*").eq("user_id", userId),
+    client.from("sales").select("*").eq("user_id", userId),
+    client.from("debts").select("*").eq("user_id", userId),
+    client.from("payments").select("*").eq("user_id", userId),
+    client.from("movements").select("*").eq("user_id", userId),
+  ]);
+  const failed = [productRes, partyRes, saleRes, debtRes, paymentRes, movementRes].find((r) => r.error);
+  if (failed?.error) return { ok: false, reason: failed.error.message };
+  const products = productRes.data;
+  const parties = partyRes.data;
+  const sales = saleRes.data;
+  const debts = debtRes.data;
+  const payments = paymentRes.data;
+  const movements = movementRes.data;
 
   await db.transaction("rw", [db.products, db.parties, db.sales, db.debts, db.payments, db.movements, db.outbox], async () => {
     await db.products.clear();
