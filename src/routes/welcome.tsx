@@ -7,7 +7,6 @@ import {
   History,
   Languages,
   Package,
-  Shield,
   ShoppingBag,
   Smartphone,
   WifiOff,
@@ -40,7 +39,6 @@ type Lang = "en" | "rw";
 
 const copy = {
   en: {
-    badge: "Free for shop owners",
     heroTitle: "Your shop, on your phone",
     heroSub: "Built for small shops and big ones.",
     heroSub2: "Works both online and offline.",
@@ -80,7 +78,6 @@ const copy = {
     lang: "Language",
   },
   rw: {
-    badge: "Ubuntu ku bacuruzi",
     heroTitle: "Iduka ryawe, kuri telefone",
     heroSub: "Yagenewe amaduka mato ndetse n'amanini.",
     heroSub2: "Ikora iyo ufite murandasi n'iyo utayifite.",
@@ -264,10 +261,6 @@ function WelcomePage() {
       <section className="mx-auto max-w-5xl px-4 pb-12 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
           <div className="text-center lg:text-left">
-            <p className="mb-4 inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              <Shield className="size-3.5 shrink-0" />
-              <span className="truncate">{t.badge}</span>
-            </p>
             <h1 className="text-balance text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl lg:text-[2.5rem]">
               {t.heroTitle}
             </h1>
