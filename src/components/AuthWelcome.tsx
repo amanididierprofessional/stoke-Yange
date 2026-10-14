@@ -17,7 +17,7 @@ type Mode = "login" | "signup" | "recover";
 type Step = 1 | 2;
 
 export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("login");
   const [step, setStep] = useState<Step>(1);
@@ -175,6 +175,14 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         }
         if (res.error === "profile") {
           toast.error(t("profileRequired"));
+          return;
+        }
+        if (res.error === "internet_required") {
+          toast.error(lang === "rw" ? "Ukeneye internet kugira ngo ufungure konti nshya." : "Connect to the internet to create your account.");
+          return;
+        }
+        if (res.error === "cloud_unavailable") {
+          toast.error(lang === "rw" ? "Konti ntishobora gufungurwa ubu. Reba internet hanyuma ugerageze nanone." : "Account creation is unavailable right now. Check your connection and try again.");
           return;
         }
         // Never show "Wrong phone/email or password" on signup

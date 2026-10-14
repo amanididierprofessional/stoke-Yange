@@ -6,32 +6,35 @@ const SHELL_URLS = ["/", "/manifest.webmanifest", "/favicon.png", "/apple-touch-
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    // Cache the app document and the same-origin JS/CSS assets it references.
-    const response = await fetch("/", { cache: "reload" });
-    if (response.ok) {
-      await cache.put("/", response.clone());
-      const html = await response.clone().text();
-      const referenced = [...html.matchAll(/(?:src|href)=["']([^"'#]+)["']/g)]
-        .map((match) => match[1])
-        .filter((path) => {
+    // A transient network failure must not make service-worker installation reject.
+    // The website retries caching on later online visits; native builds bundle assets separately.
+    try {
+      const response = await fetch("/", { cache: "reload" });
+      if (response.ok) {
+        await cache.put("/", response.clone());
+        const html = await response.clone().text();
+        const referenced = [...html.matchAll(/(?:src|href)=["']([^"'#]+)["']/g)]
+          .map((match) => match[1])
+          .filter((path) => {
+            try {
+              const url = new URL(path, self.location.origin);
+              return url.origin === self.location.origin &&
+                (url.pathname.startsWith("/assets/") || /\\.(?:js|css|woff2?|ttf|svg|png|webp|ico)$/i.test(url.pathname));
+            } catch {
+              return false;
+            }
+          });
+        await Promise.all([...new Set([...SHELL_URLS, ...referenced])].map(async (path) => {
           try {
             const url = new URL(path, self.location.origin);
-            return url.origin === self.location.origin &&
-              (url.pathname.startsWith("/assets/") || /\.(?:js|css|woff2?|ttf|svg|png|webp|ico)$/i.test(url.pathname));
+            if (url.origin === self.location.origin) await cache.add(url.href);
           } catch {
-            return false;
+            // A non-essential asset must not prevent the offline shell from installing.
           }
-        });
-      await Promise.all([...new Set([...SHELL_URLS, ...referenced])].map(async (path) => {
-        try {
-          const url = new URL(path, self.location.origin);
-          if (url.origin === self.location.origin) await cache.add(url.href);
-        } catch {
-          // A non-essential asset must not prevent the offline shell from installing.
-        }
-      }));
-    } else {
-      await cache.addAll(SHELL_URLS.slice(1));
+        }));
+      }
+    } catch {
+      // No network yet. Keep the worker installable and retry after a successful online visit.
     }
     await self.skipWaiting();
   })());

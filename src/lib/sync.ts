@@ -8,9 +8,25 @@ import { ensureSupabase, supabaseConfigured } from "./supabase";
 let running: Promise<{ ok: boolean; reason?: string }> | null = null;
 let again = false;
 let forceAgain = false;
+let syncPaused = false;
+
+/** Pause background/manual sync during destructive reset operations and wait for an active sync to finish. */
+export async function pauseSync(): Promise<() => void> {
+  syncPaused = true;
+  const active = running;
+  if (active) {
+    try {
+      await active;
+    } catch {
+      // Reset must still proceed to report its own result.
+    }
+  }
+  return () => { syncPaused = false; };
+}
 
 /** Serialised: one sync at a time; actions during a sync trigger one more pass. */
 export function trySync(opts?: { force?: boolean }): Promise<{ ok: boolean; reason?: string }> {
+  if (syncPaused) return Promise.resolve({ ok: false, reason: "reset_in_progress" });
   if (running) {
     again = true;
     if (opts?.force) forceAgain = true;

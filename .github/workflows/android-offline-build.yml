@@ -1,0 +1,69 @@
+name: Android offline build
+
+on:
+  push:
+    branches:
+      - feat/native-offline-foundation
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install JavaScript dependencies
+        run: npm install --no-audit --no-fund --legacy-peer-deps
+
+      - name: Build the bundled native web app
+        run: npm run build:native
+        env:
+          # Public Supabase publishable key (safe for client builds); never use service_role here.
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_Te3LfkYrNP1v2gUSqkcpDg_SupfSYqJ
+
+      - name: Verify the bundled entry point exists
+        run: test -f .output/public/index.html
+
+      - name: Create Android project
+        run: npx cap add android
+
+      - name: Copy bundled app into Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        run: cd android && ./gradlew assembleDebug
+
+      - name: Upload installable debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stoke-yange-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      # Public direct download URL used by Android Install buttons on the website.
+      # This is a beta/debug-signed APK until a stable production signing key is configured.
+      - name: Publish direct APK download for the website
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-latest >/dev/null 2>&1 || gh release create android-latest --title "Stoke Yange Android" --notes "Direct Android APK download for Stoke Yange. Beta build." --prerelease
+          gh release upload android-latest android/app/build/outputs/apk/debug/app-debug.apk#stoke-yange.apk --clobber
