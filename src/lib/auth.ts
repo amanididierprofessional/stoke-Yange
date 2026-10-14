@@ -155,10 +155,17 @@ export async function signUp(opts: {
       } else {
         if (!data.session) {
           const sign = await client.auth.signInWithPassword({ email, password: opts.password });
-          if (sign.error) console.warn("[auth] post-signup signin", sign.error.message);
+          if (sign.error) {
+            console.warn("[auth] post-signup signin", sign.error.message);
+            if (/email not confirmed|confirm your email/i.test(sign.error.message)) {
+              return { ok: false, error: "confirmation_required" };
+            }
+            cloudBlocked = true;
+          }
         }
         const { data: sess } = await client.auth.getSession();
         const uid = sess.session?.user?.id;
+        if (!uid) cloudBlocked = true;
         if (uid) {
           account.supabaseUserId = uid;
           const { error: pe } = await client.from("profiles").upsert({
@@ -210,6 +217,12 @@ export async function signIn(opts: {
     const { data, error } = await client.auth.signInWithPassword({ email, password: opts.password });
     if (error) {
       console.warn("[auth] cloud signin", error.message);
+      if (/email not confirmed|confirm your email/i.test(error.message)) {
+        return { ok: false, error: "confirmation_required" };
+      }
+      if (/invalid api key|invalid api|api key/i.test(error.message)) {
+        return { ok: false, error: "cloud_unavailable" };
+      }
     }
     if (data?.session?.user) {
       const uid = data.session.user.id;
