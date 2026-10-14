@@ -66,4 +66,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view android-latest >/dev/null 2>&1 || gh release create android-latest --title "Stoke Yange Android" --notes "Direct Android APK download for Stoke Yange. Beta build." --prerelease
-          gh release upload android-latest android/app/build/outputs/apk/debug/app-debug.apk#stoke-yange.apk --clobber
+          cp android/app/build/outputs/apk/debug/app-debug.apk stoke-yange.apk
+          gh release upload android-latest stoke-yange.apk --clobber
