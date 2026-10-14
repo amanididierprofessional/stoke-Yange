@@ -125,7 +125,16 @@ function RootComponent() {
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {
+    const serviceWorkers = navigator.serviceWorker;
+    // The first controlled reload warms the app's JS/CSS chunks into the offline cache.
+    if (!serviceWorkers.controller && !sessionStorage.getItem("stoke-yange-sw-reloaded")) {
+      serviceWorkers.addEventListener("controllerchange", () => {
+        if (sessionStorage.getItem("stoke-yange-sw-reloaded")) return;
+        sessionStorage.setItem("stoke-yange-sw-reloaded", "1");
+        window.location.reload();
+      }, { once: true });
+    }
+    serviceWorkers.register("/sw.js", { scope: "/" }).catch((error) => {
       console.warn("[offline] Service worker registration failed:", error);
     });
   }, []);
