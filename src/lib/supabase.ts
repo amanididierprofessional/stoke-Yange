@@ -1,11 +1,12 @@
 /**
  * Supabase client.
- * WITHOUT VITE_SUPABASE_ANON_KEY baked into the Vercel build, cloud is OFF.
- * URL defaults to your project; only the anon key is required on Vercel.
+ * Use the public Supabase publishable key in browser/native clients.
+ * This key is intentionally public; never place a service-role/secret key here.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const DEFAULT_URL = "https://hdsoxtlruzuadsqkapls.supabase.co";
+const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_Te3LfkYrNP1v2gUSqkcpDg_SupfSYqJ";
 
 function pickEnv(...names: string[]): string | undefined {
   const env = import.meta.env as Record<string, string | undefined>;
@@ -27,7 +28,7 @@ export const supabaseAnonKey = pickEnv(
   "SUPABASE_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY",
-);
+) || DEFAULT_PUBLISHABLE_KEY;
 
 export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
