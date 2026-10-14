@@ -84,7 +84,7 @@ export async function checkCloudHealth(): Promise<CloudHealth> {
 
   if (!supabaseConfigured || !supabase) {
     base.message =
-      "NO KEY: Add VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables, then Redeploy.";
+      "Supabase public key is missing from this build. Rebuild with NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.";
     return base;
   }
   if (!base.online) {
