@@ -15,7 +15,7 @@ import {
   type Account,
 } from "@/lib/auth";
 import { exportPdfReport } from "@/lib/report";
-import { trySync } from "@/lib/sync";
+import { pauseSync, trySync } from "@/lib/sync";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -111,7 +111,9 @@ function SettingsPage() {
 
   const resetAppOnly = async () => {
     setBusy(true);
+    let resumeSync: (() => void) | undefined;
     try {
+      resumeSync = await pauseSync();
       await signOutLocal();
       toast.success(lang === "rw"
         ? "Amakuru yo kuri iyi telefone yasibwe. Ayari kuri cloud arasigaye."
@@ -120,6 +122,7 @@ function SettingsPage() {
     } catch (error) {
       toast.error(lang === "rw" ? "Gusiba amakuru kuri telefone ntibyagenze neza." : "Could not clear this phone's data: " + String(error));
     } finally {
+      resumeSync?.();
       setBusy(false);
       setResetOpen(false);
     }
@@ -127,7 +130,10 @@ function SettingsPage() {
 
   const resetFull = async () => {
     setBusy(true);
+    let resumeSync: (() => void) | undefined;
     try {
+      // Prevent a background sync from re-uploading old rows while cloud data is being deleted.
+      resumeSync = await pauseSync();
       const cloud = await wipeCloudData();
       if (!cloud.ok) {
         toast.error(lang === "rw"
@@ -143,6 +149,7 @@ function SettingsPage() {
     } catch (error) {
       toast.error(lang === "rw" ? "Gusiba amakuru ntibyagenze neza." : "Could not finish clearing data: " + String(error));
     } finally {
+      resumeSync?.();
       setBusy(false);
       setResetOpen(false);
     }
