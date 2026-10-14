@@ -123,7 +123,7 @@ const copy = {
   },
 } as const;
 
-const ANDROID_APK_URL = "https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/stoke-yange.apk";
+const ANDROID_APK_URL = "https://github.com/amanididierprofessional/stoke-Yange/releases/latest/download/stoke-yange.apk";
 
 type BIPEvent = Event & {
   prompt: () => Promise<void>;
@@ -254,7 +254,7 @@ function WelcomePage() {
               </button>
             </div>
             {isAndroid && !isStandalone() ? (
-              <a href={ANDROID_APK_URL} download="stoke-yange.apk" className="hidden h-9 max-w-[12rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex">
+              <a href={ANDROID_APK_URL} target="_blank" rel="noreferrer" className="hidden h-9 max-w-[12rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex">
                 <Download className="size-3.5 shrink-0" />
                 <span className="truncate">{t.androidDownload}</span>
               </a>
