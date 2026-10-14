@@ -122,6 +122,8 @@ export async function signUp(opts: {
   };
 
   const client = await ensureSupabase();
+  if (!navigator.onLine) return { ok: false, error: "internet_required" };
+  if (!supabaseConfigured || !client) return { ok: false, error: "cloud_unavailable" };
   let cloudBlocked = false;
 
   if (supabaseConfigured && client && navigator.onLine) {
