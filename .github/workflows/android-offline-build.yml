@@ -28,12 +28,15 @@ jobs:
           java-version: "21"
 
       - name: Install JavaScript dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund --legacy-peer-deps
 
       - name: Build the bundled native web app
         run: npm run build:native
         env:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Verify the bundled entry point exists
+        run: test -f .output/public/index.html
 
       - name: Create Android project
         run: npx cap add android
