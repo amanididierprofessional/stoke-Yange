@@ -78,7 +78,8 @@
     "zod": "^3.25.76",
     "@capacitor/core": "^8.0.0",
     "@capacitor/android": "^8.0.0",
-    "@capacitor/ios": "^8.0.0"
+    "@capacitor/ios": "^8.0.0",
+    "@fontsource-variable/outfit": "^5.2.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
