@@ -5,8 +5,12 @@ export const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
 
 const queue = async (op: string) => {
   await db.outbox.add({ op, createdAt: Date.now() });
+  // Defer until the surrounding IndexedDB transaction has committed. This avoids
+  // racing a cloud upload against uncommitted local sale/stock changes.
   if (typeof navigator !== "undefined" && navigator.onLine) {
-    trySync().catch(() => {});
+    window.setTimeout(() => {
+      trySync().catch(() => {});
+    }, 0);
   }
 };
 
