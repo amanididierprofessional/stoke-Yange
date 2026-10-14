@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+
 /** Browser vs installed-app entry mode */
 
 const KEY = "sy-app-mode";
@@ -9,7 +11,7 @@ export function isStandalone(): boolean {
   // iOS Safari
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ios = (window.navigator as any).standalone === true;
-  return mq || ios;
+  return Capacitor.isNativePlatform() || mq || ios;
 }
 
 /** User chose "Open app" or already installed — skip marketing site. */
