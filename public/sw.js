@@ -62,10 +62,12 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       } catch {
-        return (await cache.match(request)) ||
-          (await cache.match(url.pathname + url.search)) ||
-          (await cache.match("/")) ||
-          new Response("Stoke Yange is not available offline yet. Open it once while connected to the internet, then try again.", {
+        const exactPage = (await cache.match(request)) || (await cache.match(url.pathname + url.search));
+        if (exactPage) return exactPage;
+        // Avoid hydrating HTML for the wrong route: fall back to the cached app home.
+        if (url.pathname !== "/") return Response.redirect(new URL("/", self.location.origin).href, 302);
+        return (await cache.match("/")) ||
+          new Response("Stoke Yange has not been cached yet. Open it once while connected to the internet, then try again.", {
             status: 503,
             headers: { "Content-Type": "text/plain; charset=utf-8" },
           });
