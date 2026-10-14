@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Capacitor } from "@capacitor/core";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { AlertTriangle, Search } from "lucide-react";
@@ -38,6 +39,13 @@ function RootEntry() {
   const [showApp, setShowApp] = useState(false);
 
   useEffect(() => {
+    // A native Capacitor install is already the app; never route it through the
+    // PWA/marketing mode gate, which otherwise leaves a logo-only screen visible.
+    if (Capacitor.isNativePlatform()) {
+      enterAppMode();
+      setShowApp(true);
+      return;
+    }
     if (isAppMode()) {
       setShowApp(true);
       return;
@@ -47,8 +55,12 @@ function RootEntry() {
 
   if (!showApp) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <BrandLogo className="size-14 rounded-3xl" />
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-8">
+        <BrandLogo className="size-16" />
+        <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
+        <div className="h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
+        </div>
       </div>
     );
   }
