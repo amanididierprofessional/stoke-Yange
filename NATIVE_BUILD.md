@@ -21,11 +21,11 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The GitHub Actions workflow `.github/workflows/android-offline-build.yml` also builds a debug APK artifact for testing. On pushes to `main`, it publishes the APK as a direct-download asset at `https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/stoke-yange.apk`. This is a beta/debug-signed APK until a stable production signing key is configured; do not promise seamless in-place upgrades between different debug builds.
+The GitHub Actions workflow `.github/workflows/android-offline-build.yml` generates Android launcher/splash artwork from the same `public/icon-512.png` used by the PWA, then builds a debug APK artifact for testing. On pushes to `main`, it publishes the APK as a direct-download asset at `https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/stoke-yange.apk`. This is a beta/debug-signed APK until a stable production signing key is configured; do not promise seamless in-place upgrades between different debug builds.
 
 ## Online sync configuration
 
-The app can open and use its local Dexie database without a network connection. To enable Supabase cloud sync in a GitHub Actions build, configure the repository Actions secret `VITE_SUPABASE_ANON_KEY` with the project's public anon/publishable key. Do not put a Supabase service-role key in a mobile app. If the secret is absent, the APK is useful for offline UI testing but cloud sync is not configured.
+The app uses the project's public Supabase publishable key as a frontend fallback and accepts `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `VITE_SUPABASE_ANON_KEY` overrides. Publishable keys are expected to be present in client bundles; never put a Supabase service-role/secret key in a mobile app. The app can open and use its local Dexie database without a network connection.
 
 ## Important release checks
 

@@ -123,7 +123,7 @@ const copy = {
   },
 } as const;
 
-const ANDROID_APK_URL = "https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/app-debug.apk";
+const ANDROID_APK_URL = "https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/stoke-yange.apk";
 
 type BIPEvent = Event & {
   prompt: () => Promise<void>;

@@ -34,15 +34,52 @@ jobs:
       - name: Build the bundled native web app
         run: npm run build:native
         env:
-          # Public Supabase publishable key (safe for client builds); never use service_role here.
+          # Public client key only. Never use a service-role/secret key in a mobile app.
+          NEXT_PUBLIC_SUPABASE_URL: https://hdsoxtlruzuadsqkapls.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_Te3LfkYrNP1v2gUSqkcpDg_SupfSYqJ
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          SUPABASE_PUBLISHABLE_KEY: sb_publishable_Te3LfkYrNP1v2gUSqkcpDg_SupfSYqJ
 
       - name: Verify the bundled entry point exists
         run: test -f .output/public/index.html
 
       - name: Create Android project
         run: npx cap add android
+
+      - name: Prepare Stoke Yange native splash and icon source assets
+        run: |
+          python -m pip install --quiet Pillow
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+          
+          out = Path("assets")
+          out.mkdir(exist_ok=True)
+          source = Image.open("public/icon-512.png").convert("RGBA")
+          
+          source.resize((1024, 1024), Image.Resampling.LANCZOS).save(out / "icon-only.png")
+          
+          foreground = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+          mark = source.resize((660, 660), Image.Resampling.LANCZOS)
+          foreground.alpha_composite(mark, ((1024 - mark.width) // 2, (1024 - mark.height) // 2))
+          foreground.save(out / "icon-foreground.png")
+          
+          Image.new("RGBA", (1024, 1024), "#FAF8F5").save(out / "icon-background.png")
+          
+          splash = Image.new("RGBA", (2732, 2732), "#FAF8F5")
+          mark = source.resize((560, 560), Image.Resampling.LANCZOS)
+          splash.alpha_composite(mark, ((2732 - mark.width) // 2, (2732 - mark.height) // 2 - 70))
+          draw = ImageDraw.Draw(splash)
+          try:
+              font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 112)
+          except OSError:
+              font = ImageFont.load_default()
+          label = "Stoke Yange"
+          bounds = draw.textbbox((0, 0), label, font=font)
+          draw.text(((2732 - (bounds[2] - bounds[0])) // 2, 1730), label, fill="#382B24", font=font)
+          splash.save(out / "splash.png")
+          splash.save(out / "splash-dark.png")
+          PY
+          npx capacitor-assets generate --android --assetPath assets --iconBackgroundColor "#FAF8F5" --splashBackgroundColor "#FAF8F5"
 
       - name: Copy bundled app into Android project
         run: npx cap sync android
