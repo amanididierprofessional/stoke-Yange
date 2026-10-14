@@ -66,7 +66,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         { pct: 15, label: "DB", run: async () => { await ensureSeeded(); } },
         { pct: 40, label: "Stock", run: async () => { await db.products.count(); await db.sales.count(); } },
         { pct: 65, label: "Auth", run: async () => { const ok = await isLoggedIn(); if (!cancelled) setAuthed(ok); } },
-        { pct: 90, label: "Sync", run: async () => { if (navigator.onLine) await trySync().catch(() => {}); } },
+        // Cloud sync must never block local startup, even on a weak connection.
+        { pct: 90, label: "Sync", run: async () => {
+          if (navigator.onLine) void trySync().catch((error) => console.warn("[cloud-sync] background sync failed:", error));
+        } },
         { pct: 100, label: "OK", run: async () => {} },
       ];
       for (const s of stages) {
@@ -74,7 +77,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         setBootPct(s.pct);
         setBootLabel(s.label);
         await s.run();
-        await new Promise((r) => setTimeout(r, 120));
       }
       if (!cancelled) setReady(true);
     })().catch(console.error);
