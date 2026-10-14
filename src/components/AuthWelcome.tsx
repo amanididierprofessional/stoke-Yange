@@ -121,6 +121,18 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           goSignup();
           return;
         }
+        if (res.error === "confirmation_required") {
+          toast.error(lang === "rw"
+            ? "Konti irasaba kwemeza email. Saba umuyobozi kuzimya email confirmation kugira ngo kwinjira ukoresheje telefone bikore."
+            : "Supabase requires email confirmation. Phone-based sign-in needs email confirmation disabled in Supabase Auth settings.");
+          return;
+        }
+        if (res.error === "cloud_unavailable") {
+          toast.error(lang === "rw"
+            ? "Serivisi yo kwinjira ntiboneka ubu. Reba internet wongere ugerageze."
+            : "Sign-in service is unavailable. Check your connection and try again.");
+          return;
+        }
         if (res.error === "bad_password") {
           toast.error(t("badLogin"));
           toast.message(t("forgotPassword"));
@@ -185,6 +197,12 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           toast.error(lang === "rw" ? "Konti ntishobora gufungurwa ubu. Reba internet hanyuma ugerageze nanone." : "Account creation is unavailable right now. Check your connection and try again.");
           return;
         }
+        if (res.error === "confirmation_required") {
+          toast.error(lang === "rw"
+            ? "Konti yarakozwe ariko isaba kwemeza email. Kugira ngo kwinjira ukoresheje telefone bikore, email confirmation igomba kuzimwa muri Supabase Auth."
+            : "The account was created, but Supabase requires email confirmation. Disable email confirmation in Supabase Auth for phone-based sign-in.");
+          return;
+        }
         // Never show "Wrong phone/email or password" on signup
         toast.error(t("signupFailed"));
         return;
@@ -194,6 +212,11 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         setOpen(false);
         onAuthed?.();
       }, 1000);
+    } catch (error) {
+      console.error("[auth-ui] sign up failed", error);
+      toast.error(lang === "rw"
+        ? "Konti ntishobora gufungurwa ubu. Reba internet wongere ugerageze."
+        : "Couldn't create the account. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -327,7 +350,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
                   welcome ? "bg-success" : "bg-primary",
                 )}
               >
-                {busy ? <PremiumDots label="Signing in…" /> : mode === "login" ? t("signIn") : t("continue")}
+                {busy ? (lang === "rw" ? "Birimo kwinjira…" : "Signing in…") : mode === "login" ? t("signIn") : t("continue")}
               </button>
               {mode === "login" && !busy && (
                 <button type="button" className="w-full text-center text-xs font-medium text-primary" onClick={goRecover}>
@@ -351,7 +374,11 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
                 onClick={mode === "recover" ? submitRecover : submitProfile}
                 className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground"
               >
-                {t("submit")}
+                {busy
+                  ? (mode === "recover"
+                    ? (lang === "rw" ? "Birimo kuvugurura..." : "Updating password…")
+                    : (lang === "rw" ? "Birimo gufungura konti..." : "Creating account…"))
+                  : t("submit")}
               </button>
               {mode === "recover" && (
                 <button type="button" className="w-full text-xs text-muted-foreground" onClick={goLogin}>
