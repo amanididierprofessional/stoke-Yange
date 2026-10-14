@@ -11,7 +11,11 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:native": "vite build --config vite.native.config.ts",
+    "cap:sync": "npm run build:native && cap sync",
+    "cap:android": "npm run build:native && cap sync android",
+    "cap:ios": "npm run build:native && cap sync ios"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -71,7 +75,10 @@
     "tw-animate-css": "^1.3.4",
     "vaul": "^1.1.2",
     "vite-tsconfig-paths": "^6.0.2",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/ios": "^8.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -94,6 +101,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@capacitor/cli": "^8.0.0"
   }
 }
