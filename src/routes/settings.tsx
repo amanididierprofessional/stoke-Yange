@@ -4,7 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Pencil, Phone, MessageCircle, Cloud, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { db, factoryReset } from "@/lib/db";
+import { db } from "@/lib/db";
 import { useI18n } from "@/lib/i18n";
 import { useShopName } from "@/components/AppShell";
 import {
