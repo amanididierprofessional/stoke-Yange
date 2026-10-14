@@ -8,7 +8,6 @@ import { db } from "@/lib/db";
 import { useI18n } from "@/lib/i18n";
 import { useShopName } from "@/components/AppShell";
 import {
-  clearSessionOnly,
   getAccount,
   isLoggedIn,
   signOutLocal,
@@ -113,12 +112,13 @@ function SettingsPage() {
   const resetAppOnly = async () => {
     setBusy(true);
     try {
-      await factoryReset(false);
-      await db.settings.delete("account");
-      await db.settings.delete("shopName");
-      clearSessionOnly();
-      toast.success(t("resetPhoneDone"));
+      await signOutLocal();
+      toast.success(lang === "rw"
+        ? "Amakuru yo kuri iyi telefone yasibwe. Ayari kuri cloud arasigaye."
+        : "This phone's app data was cleared. Cloud data was kept.");
       window.location.reload();
+    } catch (error) {
+      toast.error(lang === "rw" ? "Gusiba amakuru kuri telefone ntibyagenze neza." : "Could not clear this phone's data: " + String(error));
     } finally {
       setBusy(false);
       setResetOpen(false);
@@ -129,15 +129,19 @@ function SettingsPage() {
     setBusy(true);
     try {
       const cloud = await wipeCloudData();
-      if (!cloud.ok && cloud.reason !== "no_session" && cloud.reason !== "not_configured" && cloud.reason !== "timeout") {
-        toast.error(cloud.reason ?? "Cloud wipe failed");
+      if (!cloud.ok) {
+        toast.error(lang === "rw"
+          ? "Cloud ntiyasibwe; nta makuru yasibwe kuri telefone. Ongera ugerageze ufite internet: " + (cloud.reason || "ikosa ritazwi")
+          : "Cloud reset failed. Nothing was cleared on this phone; reconnect and retry. " + (cloud.reason || "Unknown error"));
+        return;
       }
-      await factoryReset(false);
-      await db.settings.delete("account");
-      await db.settings.delete("shopName");
-      clearSessionOnly();
-      toast.success(t("resetFullDone"));
+      await signOutLocal();
+      toast.success(lang === "rw"
+        ? "Amakuru yasibwe kuri telefone no kuri cloud."
+        : "Data was cleared from this phone and the cloud.");
       window.location.reload();
+    } catch (error) {
+      toast.error(lang === "rw" ? "Gusiba amakuru ntibyagenze neza." : "Could not finish clearing data: " + String(error));
     } finally {
       setBusy(false);
       setResetOpen(false);
@@ -298,6 +302,14 @@ function SettingsPage() {
           <div className="w-full max-w-sm rounded-3xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <p className="text-base font-bold">{t("resetTitle")}</p>
             <p className="mt-2 text-sm text-muted-foreground">{t("resetBody")}</p>
+            <div className="mt-3 space-y-2 rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
+              <p>{lang === "rw"
+                ? "Telefone gusa: isiba amakuru ari kuri iyi telefone gusa. Ayari kuri cloud arasigara kandi ashobora kugaruka wongera kwinjira."
+                : "Phone only: clears this device but keeps cloud backup. That data can return when you sign in again."}</p>
+              <p>{lang === "rw"
+                ? "Telefone + cloud: bisaba internet na konti yinjiye. Niba cloud itasibwe neza, amakuru yo kuri telefone ntazasibwa."
+                : "Phone + cloud: requires internet and an active sign-in. If cloud deletion fails, this phone will not be cleared."}</p>
+            </div>
             {busy && <p className="mt-2 text-center text-xs text-primary">{t("pleaseWait")}</p>}
             <div className="mt-4 space-y-2">
               <button type="button" disabled={busy} onClick={resetAppOnly} className="h-12 w-full rounded-full border font-semibold">

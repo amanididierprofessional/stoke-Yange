@@ -7,6 +7,14 @@ const config: CapacitorConfig = {
   // the application UI must load from files packaged inside the native app.
   webDir: ".output/public",
   backgroundColor: "#FAF8F5",
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 300,
+      launchAutoHide: true,
+      backgroundColor: "#FAF8F5",
+      showSpinner: false,
+    },
+  },
   android: {
     allowMixedContent: false,
   },

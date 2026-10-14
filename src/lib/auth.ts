@@ -310,7 +310,11 @@ export function clearSessionOnly() {
 export async function signOutLocal() {
   setLoggedIn(false);
   if (supabase) {
-    void supabase.auth.signOut().catch(() => {});
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch {
+      // Clear local app data even if the local auth session is already invalid.
+    }
   }
   await factoryReset(false);
   await db.settings.delete(KEY);
@@ -328,15 +332,18 @@ export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }>
       const { data } = await supabase.auth.getSession();
       const uid = data.session?.user?.id;
       if (!uid) return { ok: false, reason: "no_session" };
-      await Promise.all([
-        supabase.from("movements").delete().eq("user_id", uid),
-        supabase.from("payments").delete().eq("user_id", uid),
-        supabase.from("debts").delete().eq("user_id", uid),
-        supabase.from("sales").delete().eq("user_id", uid),
-        supabase.from("parties").delete().eq("user_id", uid),
-        supabase.from("products").delete().eq("user_id", uid),
-        supabase.from("profiles").delete().eq("id", uid),
-      ]);
+      // Delete dependants before their referenced rows, and inspect every response.
+      const deletions = [
+        await supabase.from("movements").delete().eq("user_id", uid),
+        await supabase.from("payments").delete().eq("user_id", uid),
+        await supabase.from("debts").delete().eq("user_id", uid),
+        await supabase.from("sales").delete().eq("user_id", uid),
+        await supabase.from("parties").delete().eq("user_id", uid),
+        await supabase.from("products").delete().eq("user_id", uid),
+        await supabase.from("profiles").delete().eq("id", uid),
+      ];
+      const failed = deletions.find((result) => result.error);
+      if (failed?.error) return { ok: false, reason: failed.error.message };
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: String(e) };
@@ -346,7 +353,7 @@ export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }>
   return Promise.race([
     run(),
     new Promise<{ ok: boolean; reason?: string }>((resolve) =>
-      setTimeout(() => resolve({ ok: false, reason: "timeout" }), 6000),
+      setTimeout(() => resolve({ ok: false, reason: "timeout" }), 15000),
     ),
   ]);
 }

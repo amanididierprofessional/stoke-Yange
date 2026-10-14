@@ -79,6 +79,8 @@
     "@capacitor/core": "^8.0.0",
     "@capacitor/android": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
+    "@capacitor/camera": "^8.0.0",
+    "@capacitor/splash-screen": "^8.0.0",
     "@fontsource-variable/outfit": "^5.2.8"
   },
   "devDependencies": {

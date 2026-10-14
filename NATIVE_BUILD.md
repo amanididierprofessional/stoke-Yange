@@ -21,7 +21,7 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The GitHub Actions workflow `.github/workflows/android-offline-build.yml` also builds a debug APK artifact for testing.
+The GitHub Actions workflow `.github/workflows/android-offline-build.yml` also builds a debug APK artifact for testing. On pushes to `main`, it publishes the APK as a direct-download asset at `https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/stoke-yange.apk`. This is a beta/debug-signed APK until a stable production signing key is configured; do not promise seamless in-place upgrades between different debug builds.
 
 ## Online sync configuration
 
@@ -33,5 +33,8 @@ The app can open and use its local Dexie database without a network connection. 
 - Confirm product, stock, sale, debt, history, and settings screens work offline.
 - Reconnect and confirm pending data syncs without duplicate sales.
 - Test on physical Android devices before preparing a signed release.
+- Camera access uses the native Capacitor Camera plugin on Android; the PWA keeps its browser camera flow.
+- Local-only reset clears this device and signs out locally; cloud data intentionally remains and can be restored at next sign-in. Full reset now requires a successful online cloud deletion and reports errors instead of claiming success.
+- For a public production launch, configure a stable Android signing keystore in GitHub Actions secrets and build/sign a release APK. The debug APK download is suitable for beta testing, not a long-term update channel.
 - For iOS, use macOS/Xcode and the Apple signing/App Store workflow.
 - Never publish the debug APK as a production release. Release builds need signing, privacy disclosures, store assets, and a tested backup/restore flow.

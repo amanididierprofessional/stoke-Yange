@@ -46,7 +46,9 @@ const copy = {
     open: "Open app",
     installing: "Installing…",
     iosHint: "On iPhone: Share → Add to Home Screen",
-    androidHint: "Tap Install, or use Chrome menu → Install app",
+    androidHint: "Download the Android app directly. Open the downloaded file to install it.",
+    desktopHint: "Tap Install, or use Chrome menu → Install app",
+    androidDownload: "Download Android app",
     featuresTitle: "Everything your shop needs",
     featuresSub: "Short tools. Clear numbers. No clutter.",
     howTitle: "How it works",
@@ -85,7 +87,9 @@ const copy = {
     open: "Fungura app",
     installing: "Birimo…",
     iosHint: "Kuri iPhone: Share → Add to Home Screen",
-    androidHint: "Kanda Shyiramo, cyangwa menu ya Chrome → Install app",
+    androidHint: "Manura application ya Android. Fungura dosiye umaze kuyimanura kugira ngo uyishyiremo.",
+    desktopHint: "Kanda Shyiramo, cyangwa menu ya Chrome → Install app",
+    androidDownload: "Manura application ya Android",
     featuresTitle: "Ibyo iduka ryawe rikeneye",
     featuresSub: "Ibikoresho byoroshye. Imibare isobanutse.",
     howTitle: "Uko bikora",
@@ -119,6 +123,8 @@ const copy = {
   },
 } as const;
 
+const ANDROID_APK_URL = "https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/stoke-yange.apk";
+
 type BIPEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -136,6 +142,7 @@ function WelcomePage() {
   const [installed, setInstalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [isIos, setIsIos] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
 
   useEffect(() => {
     if (isStandalone()) {
@@ -153,6 +160,7 @@ function WelcomePage() {
     const hasApp = isStandalone() || preferApp();
     setInstalled(hasApp);
     const ua = navigator.userAgent;
+    setIsAndroid(/Android/i.test(ua));
     setIsIos(/iPad|iPhone|iPod/.test(ua) && !(window as unknown as { MSStream?: unknown }).MSStream);
 
     const onBip = (e: Event) => {
@@ -245,15 +253,17 @@ function WelcomePage() {
                 RW
               </button>
             </div>
-            <button
-              type="button"
-              onClick={showOpen ? goApp : install}
-              disabled={busy}
-              className="hidden h-9 max-w-[9.5rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex"
-            >
-              {showOpen ? <Smartphone className="size-3.5 shrink-0" /> : <Download className="size-3.5 shrink-0" />}
-              <span className="truncate">{busy ? t.installing : showOpen ? t.open : t.install}</span>
-            </button>
+            {isAndroid && !isStandalone() ? (
+              <a href={ANDROID_APK_URL} download="stoke-yange.apk" className="hidden h-9 max-w-[12rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex">
+                <Download className="size-3.5 shrink-0" />
+                <span className="truncate">{t.androidDownload}</span>
+              </a>
+            ) : (
+              <button type="button" onClick={showOpen ? goApp : install} disabled={busy} className="hidden h-9 max-w-[9.5rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex">
+                {showOpen ? <Smartphone className="size-3.5 shrink-0" /> : <Download className="size-3.5 shrink-0" />}
+                <span className="truncate">{busy ? t.installing : showOpen ? t.open : t.install}</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -270,20 +280,21 @@ function WelcomePage() {
             </div>
 
             <div className="mt-8 flex justify-center lg:justify-start">
-              <button
-                type="button"
-                onClick={showOpen ? goApp : install}
-                disabled={busy}
-                className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground shadow-card disabled:opacity-70 sm:w-auto sm:min-w-[12rem]"
-              >
-                {showOpen ? <Smartphone className="size-5 shrink-0" /> : <Download className="size-5 shrink-0" />}
-                <span className="text-center">{busy ? t.installing : showOpen ? t.open : t.install}</span>
-              </button>
+              {isAndroid && !isStandalone() ? (
+                <a href={ANDROID_APK_URL} download="stoke-yange.apk" className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground shadow-card sm:w-auto sm:min-w-[12rem]">
+                  <Download className="size-5 shrink-0" /><span className="text-center">{t.androidDownload}</span>
+                </a>
+              ) : (
+                <button type="button" onClick={showOpen ? goApp : install} disabled={busy} className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground shadow-card disabled:opacity-70 sm:w-auto sm:min-w-[12rem]">
+                  {showOpen ? <Smartphone className="size-5 shrink-0" /> : <Download className="size-5 shrink-0" />}
+                  <span className="text-center">{busy ? t.installing : showOpen ? t.open : t.install}</span>
+                </button>
+              )}
             </div>
 
             {!showOpen && isIos && <p className="mt-4 text-pretty text-xs leading-snug text-muted-foreground">{t.iosHint}</p>}
             {!showOpen && !isIos && !deferred && (
-              <p className="mt-3 text-pretty text-xs leading-snug text-muted-foreground">{t.androidHint}</p>
+              <p className="mt-3 text-pretty text-xs leading-snug text-muted-foreground">{isAndroid ? t.androidHint : t.desktopHint}</p>
             )}
           </div>
 
@@ -376,15 +387,16 @@ function WelcomePage() {
           <h2 className="text-balance text-2xl font-bold tracking-tight">{t.ctaTitle}</h2>
           <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base">{t.ctaSub}</p>
           <div className="mt-8 flex justify-center">
-            <button
-              type="button"
-              onClick={showOpen ? goApp : install}
-              disabled={busy}
-              className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground sm:w-auto"
-            >
-              {showOpen ? <Smartphone className="size-5 shrink-0" /> : <Download className="size-5 shrink-0" />}
-              <span>{busy ? t.installing : showOpen ? t.open : t.install}</span>
-            </button>
+            {isAndroid && !isStandalone() ? (
+              <a href={ANDROID_APK_URL} download="stoke-yange.apk" className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground sm:w-auto">
+                <Download className="size-5 shrink-0" /><span>{t.androidDownload}</span>
+              </a>
+            ) : (
+              <button type="button" onClick={showOpen ? goApp : install} disabled={busy} className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground sm:w-auto">
+                {showOpen ? <Smartphone className="size-5 shrink-0" /> : <Download className="size-5 shrink-0" />}
+                <span>{busy ? t.installing : showOpen ? t.open : t.install}</span>
+              </button>
+            )}
           </div>
         </div>
       </section>

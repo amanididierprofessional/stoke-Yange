@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - feat/native-offline-foundation
+      - main
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android-debug:
@@ -47,10 +48,20 @@ jobs:
       - name: Build debug APK
         run: cd android && ./gradlew assembleDebug
 
-      - name: Upload installable debug APK
+      - name: Upload installable debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: stoke-yange-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Public direct download URL used by Android Install buttons on the website.
+      # This is a beta/debug-signed APK until a stable production signing key is configured.
+      - name: Publish direct APK download for the website
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-latest >/dev/null 2>&1 || gh release create android-latest --title "Stoke Yange Android" --notes "Direct Android APK download for Stoke Yange. Beta build." --prerelease
+          gh release upload android-latest android/app/build/outputs/apk/debug/app-debug.apk#stoke-yange.apk --clobber

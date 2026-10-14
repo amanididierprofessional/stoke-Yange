@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Capacitor } from "@capacitor/core";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PackagePlus, Plus, Search, Trash2 } from "lucide-react";
@@ -193,6 +195,25 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
 
   const openCamera = async () => {
     setCameraError("");
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const photo = await Camera.getPhoto({
+          quality: 82,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera,
+          width: 900,
+          height: 900,
+        });
+        if (photo.dataUrl) setF((prev) => ({ ...prev, image: photo.dataUrl! }));
+        setCameraOpen(false);
+      } catch (error) {
+        console.warn("[camera] native capture failed:", error);
+        setCameraError("Camera permission was denied or the camera could not open. Allow camera access in Android settings and try again.");
+        setCameraOpen(true);
+      }
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError("Camera access needs a supported browser and a secure HTTPS connection.");
       setCameraOpen(true);
