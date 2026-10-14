@@ -34,7 +34,9 @@ jobs:
       - name: Build the bundled native web app
         run: npm run build:native
         env:
+          # Public Supabase publishable key (safe for client builds); never use service_role here.
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_Te3LfkYrNP1v2gUSqkcpDg_SupfSYqJ
 
       - name: Verify the bundled entry point exists
         run: test -f .output/public/index.html
