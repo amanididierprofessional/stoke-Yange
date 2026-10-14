@@ -6,7 +6,7 @@ import { AlertTriangle, Search } from "lucide-react";
 import { db, CATEGORIES, type Product } from "@/lib/db";
 import { fmt } from "@/lib/actions";
 import { useI18n } from "@/lib/i18n";
-import { isAppMode } from "@/lib/app-mode";
+import { enterAppMode, isAppMode } from "@/lib/app-mode";
 import { CategoryPills } from "@/components/AppShell";
 import { ProductCard, SellSheet } from "@/components/SellSheet";
 import { BrandLogo } from "@/components/BrandLogo";
