@@ -1,4 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { Capacitor } from "@capacitor/core";
+import { SplashScreen } from "@capacitor/splash-screen";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Bell, BookUser, History, Package, Settings, ShoppingBag, Wifi, WifiOff, Cloud, X, RefreshCw } from "lucide-react";
@@ -18,8 +20,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [ready, setReady] = useState(false);
-  const [bootPct, setBootPct] = useState(0);
-  const [bootLabel, setBootLabel] = useState("…");
   const [authed, setAuthed] = useState(false);
   const shop = useShopName();
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
@@ -31,6 +31,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   const isLanding = path === "/welcome" || path.startsWith("/welcome/");
+  const isNative = Capacitor.isNativePlatform();
 
   const onAuthed = useCallback(() => setAuthed(true), []);
 
@@ -56,30 +57,44 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    if (isLanding) {
-      setReady(true);
-      return;
-    }
     let cancelled = false;
-    (async () => {
-      const stages: { pct: number; label: string; run: () => Promise<void> }[] = [
-        { pct: 15, label: "DB", run: async () => { await ensureSeeded(); } },
-        { pct: 40, label: "Stock", run: async () => { await db.products.count(); await db.sales.count(); } },
-        { pct: 65, label: "Auth", run: async () => { const ok = await isLoggedIn(); if (!cancelled) setAuthed(ok); } },
-        // Cloud sync must never block local startup, even on a weak connection.
-        { pct: 90, label: "Sync", run: async () => {
-          if (navigator.onLine) void trySync().catch((error) => console.warn("[cloud-sync] background sync failed:", error));
-        } },
-        { pct: 100, label: "OK", run: async () => {} },
-      ];
-      for (const s of stages) {
-        if (cancelled) return;
-        setBootPct(s.pct);
-        setBootLabel(s.label);
-        await s.run();
+
+    const finishStartup = () => {
+      if (cancelled) return;
+      setReady(true);
+      // On Android, keep the branded native splash visible until the local app is ready.
+      // The web/PWA continues to use the same in-app loading screen as before.
+      if (isNative) {
+        void SplashScreen.hide().catch((error) => {
+          console.warn("[startup] Could not hide native splash:", error);
+        });
       }
-      if (!cancelled) setReady(true);
-    })().catch(console.error);
+    };
+
+    if (isLanding) {
+      finishStartup();
+    } else {
+      (async () => {
+        // Seed first, then read the small local state in parallel. Cloud sync is never
+        // awaited during launch, so a weak connection cannot delay opening the shop.
+        await ensureSeeded();
+        const [, , loggedIn] = await Promise.all([
+          db.products.count(),
+          db.sales.count(),
+          isLoggedIn(),
+        ]);
+        if (cancelled) return;
+        setAuthed(loggedIn);
+        if (navigator.onLine) {
+          void trySync().catch((error) => console.warn("[cloud-sync] background sync failed:", error));
+        }
+        finishStartup();
+      })().catch((error) => {
+        console.error("[startup] Local initialization failed:", error);
+        // Fail open to the app shell so a local DB hiccup does not leave a permanent splash.
+        finishStartup();
+      });
+    }
 
     setOnline(navigator.onLine);
     const on = () => { setOnline(true); trySync().catch(() => {}); };
@@ -91,7 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
     };
-  }, [isLanding]);
+  }, [isLanding, isNative]);
 
   const tabs = [
     { to: "/" as const, label: t("sell"), icon: ShoppingBag },
@@ -105,14 +120,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   if (!ready) {
+    // Android's native splash remains visible until initialization completes.
+    // Avoid rendering a second, separate in-app splash over it.
+    if (isNative) return null;
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
         <BrandLogo className="mb-6 size-16 rounded-3xl" />
-        <p className="mb-3 text-sm font-semibold text-foreground">Stoke Yange</p>
-        <div className="h-2.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-primary transition-all duration-300 ease-out" style={{ width: `${bootPct}%` }} />
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">{bootPct}% · {bootLabel}</p>
+        <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
       </div>
     );
   }
