@@ -148,28 +148,54 @@ function SettingsPage() {
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">{t("settings")}</h2>
 
-      <section className="flex min-h-36 items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-card p-5 shadow-card">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Cloud className="size-5" /></span>
-            <h3 className="text-base font-bold">Cloud Sync</h3>
+      {syncMode === "auto" ? (
+        <section className="flex min-h-36 items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-card p-5 shadow-card">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Cloud className="size-5" /></span>
+              <h3 className="text-base font-bold">Cloud Sync</h3>
+            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.</p>
+            <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-success">
+              <span className="size-2 rounded-full bg-success" />
+              Kwibika mu gihe ufite internet birakora
+            </p>
+            {pendingSync > 0 && <p className="mt-1 text-[11px] text-muted-foreground">{pendingSync} bitaroherezwa; bizageragezwa internet igarutse.</p>}
           </div>
-          <p className="text-sm leading-relaxed text-muted-foreground">Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.</p>
-          <p className="mt-2 text-[11px] font-medium text-muted-foreground">
-            {syncMode === "auto" ? "Kwibika mu gihe ufite internet" : "Kuyishyiriraho"}
-            {pendingSync > 0 ? ` · ${pendingSync} bitaroherezwa` : ""}
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={syncing}
-          onClick={syncNow}
-          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-        >
-          <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Birabikwa…" : "Sync"}
-        </button>
-      </section>
+          <button
+            type="button"
+            onClick={async () => {
+              await db.settings.put({ key: "cloudSyncMode", value: "manual" });
+              toast.success("Kwibika mu buryo bwikora byahagaritswe.");
+            }}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-full border px-3 text-xs font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Hagarika
+          </button>
+        </section>
+      ) : (
+        <section className="flex min-h-36 items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-card p-5 shadow-card">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Cloud className="size-5" /></span>
+              <h3 className="text-base font-bold">Cloud Sync</h3>
+            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.</p>
+            <p className="mt-2 text-[11px] font-medium text-muted-foreground">
+              Kuyishyiriraho{pendingSync > 0 ? ` · ${pendingSync} bitaroherezwa` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={syncNow}
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Birabikwa…" : "Sync"}
+          </button>
+        </section>
+      )}
 
       <section className="space-y-3 rounded-2xl bg-card p-4 shadow-card">
         {account && (
