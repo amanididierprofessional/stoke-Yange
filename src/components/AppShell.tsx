@@ -16,7 +16,7 @@ export function useShopName() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [ready, setReady] = useState(false);
   const [bootPct, setBootPct] = useState(0);
   const [bootLabel, setBootLabel] = useState("…");
