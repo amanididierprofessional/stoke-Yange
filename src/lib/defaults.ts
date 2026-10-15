@@ -11,7 +11,7 @@ export type DefaultProduct = {
   unit: string;
   emoji: string;
   /** Real product photo URL — only set when it depicts this kind of product */
-  image?: string;
+  image?: string | undefined;
   /** Hex colour for apparel variants */
   color?: string;
 };

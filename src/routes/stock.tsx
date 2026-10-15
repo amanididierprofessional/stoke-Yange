@@ -12,6 +12,10 @@ import { useI18n } from "@/lib/i18n";
 import { CategoryPills } from "@/components/AppShell";
 import { ProductThumb } from "@/components/ProductThumb";
 import { cn } from "@/lib/utils";
+import { unitLabel } from "@/lib/i18n";
+import { Capacitor } from "@capacitor/core";
+import { Camera } from "@capacitor/camera";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/stock")({
   validateSearch: (s: Record<string, unknown>): { low?: boolean } => (s["low"] ? { low: true } : {}),
@@ -20,6 +24,8 @@ export const Route = createFileRoute("/stock")({
       { title: "Stock — Stoke Yange" },
       { name: "description", content: "Manage products, receive goods and count stock." },
       { property: "og:title", content: "Stock — Stoke Yange" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       { property: "og:description", content: "Manage products, receive goods and count stock." },
     ],
   }),
@@ -41,7 +47,7 @@ const EMOJI_CATEGORY: Record<string, string> = {
 type Mode = { kind: "edit"; p?: Product } | { kind: "in"; p: Product } | null;
 
 function StockPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { low } = Route.useSearch();
   const nav = Route.useNavigate();
   const [cat, setCat] = useState("__all");
@@ -93,7 +99,7 @@ function StockPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold underline-offset-2 hover:underline">{p.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    <span className={cn("font-semibold", isLow ? "text-destructive" : "text-foreground")}>{p.stock} {p.unit}</span>
+                    <span className={cn("font-semibold", isLow ? "text-destructive" : "text-foreground")}>{p.stock} {unitLabel(p.unit, lang)}</span>
                     {" · min "}{p.min}{" · "}{fmt(p.price)}
                   </p>
                 </div>
@@ -172,15 +178,20 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   const [cameraError, setCameraError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequest = useRef(0);
+  const [cameraBusy, setCameraBusy] = useState(false);
   const existing = useLiveQuery(() => db.products.toArray(), []) ?? [];
 
   const stopCamera = () => {
+    cameraRequest.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setCameraOpen(false);
+    setCameraBusy(false);
   };
 
   useEffect(() => () => {
+    cameraRequest.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
 
@@ -192,29 +203,47 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   }, [cameraOpen]);
 
   const openCamera = async () => {
+    if (cameraBusy) return;
+    const request = ++cameraRequest.current;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setCameraBusy(true);
     setCameraError("");
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError("Camera access needs a supported browser and a secure HTTPS connection.");
-      setCameraOpen(true);
-      return;
-    }
+    setCameraOpen(true);
     try {
+      if (Capacitor.isNativePlatform()) {
+        const permission = await Camera.requestPermissions({ permissions: ["camera"] });
+        if (permission.camera !== "granted") throw new Error("permission");
+      }
+      if (request !== cameraRequest.current) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError(t("cameraUnsupported"));
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } },
         audio: false,
       });
+      if (request !== cameraRequest.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
-      setCameraOpen(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
     } catch {
-      setCameraError("Camera permission was denied or the camera is already in use. Allow camera access and try again.");
-      setCameraOpen(true);
+      if (request === cameraRequest.current) setCameraError(t("cameraDenied"));
+    } finally {
+      if (request === cameraRequest.current) setCameraBusy(false);
     }
   };
 
   const capturePhoto = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) {
-      setCameraError("Camera is still starting. Please try again in a moment.");
+      setCameraError(t("cameraStarting"));
       return;
     }
     const canvas = document.createElement("canvas");
@@ -224,11 +253,11 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     canvas.height = Math.round(video.videoHeight * scale);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      setCameraError("Could not capture this photo. Please try again.");
+      setCameraError(t("cameraFailed"));
       return;
     }
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    // Stored only in this browser's local IndexedDB product record; never uploaded to Supabase.
+    // The photo joins the product record only when Save is pressed.
     setF((prev) => ({ ...prev, image: canvas.toDataURL("image/webp", 0.82) }));
     stopCamera();
   };
@@ -305,8 +334,8 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
         <div className="flex flex-col items-center gap-2">
           <ProductThumb emoji={f.emoji} image={f.image || undefined} color={f.color || undefined} name={f.name} className="size-24" emojiClassName="text-4xl" />
           <div className="flex flex-wrap justify-center gap-2">
-            <button type="button" onClick={() => void openCamera()} className="rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary">Take product photo</button>
-            {f.image && <button type="button" onClick={() => setF((prev) => ({ ...prev, image: "" }))} className="rounded-full border px-4 py-2 text-xs font-medium text-muted-foreground">Remove photo</button>}
+            <Button type="button" variant="outline" disabled={cameraBusy} onClick={() => void openCamera()} className="rounded-full text-xs">{t("takePhoto")}</Button>
+            {f.image && <Button type="button" variant="outline" onClick={() => setF((prev) => ({ ...prev, image: "" }))} className="rounded-full text-xs">{t("removePhoto")}</Button>}
           </div>
         </div>
         {cameraOpen && (
@@ -314,16 +343,15 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
               {cameraError ? (
               <div className="space-y-2">
                 <p className="text-sm text-destructive">{cameraError}</p>
-                <button type="button" onClick={() => void openCamera()} className="h-10 w-full rounded-full bg-primary font-semibold text-primary-foreground">Try camera again</button>
+                <Button type="button" disabled={cameraBusy} onClick={() => void openCamera()} className="h-10 w-full rounded-full">{t("retryCamera")}</Button>
               </div>
             ) : (
               <video ref={videoRef} autoPlay playsInline muted className="max-h-72 w-full rounded-xl bg-black object-contain" />
             )}
             <div className="flex gap-2">
-              {!cameraError && <button type="button" onClick={capturePhoto} className="h-11 flex-1 rounded-full bg-primary font-semibold text-primary-foreground">Capture photo</button>}
-              <button type="button" onClick={stopCamera} className="h-11 flex-1 rounded-full border font-semibold">Close camera</button>
+              {!cameraError && <Button type="button" disabled={cameraBusy} onClick={capturePhoto} className="h-11 flex-1 rounded-full">{t("capturePhoto")}</Button>}
+              <Button type="button" variant="outline" onClick={stopCamera} className="h-11 flex-1 rounded-full">{t("closeCamera")}</Button>
             </div>
-            <p className="text-[11px] text-muted-foreground">Photos stay on this device in Stoke Yange app data. They are not sent to Supabase or saved to your gallery.</p>
           </div>
         )}
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
@@ -340,7 +368,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
             <datalist id="cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
           </Field>
           <Field label={t("unit")}>
-            <select value={f.unit} onChange={set("unit")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">{UNITS.map((u) => <option key={u}>{u}</option>)}</select>
+            <select value={f.unit} onChange={set("unit")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">{UNITS.map((u) => <option key={u} value={u}>{unitLabel(u, lang)}</option>)}</select>
           </Field>
           <Field label={t("cost")}><Input inputMode="numeric" value={f.cost} onChange={set("cost")} className="h-11 rounded-xl" /></Field>
           <Field label={t("sellPrice")}><Input inputMode="numeric" value={f.price} onChange={set("price")} className="h-11 rounded-xl" /></Field>
@@ -465,7 +493,7 @@ function DefaultsPicker({
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{label}</p>
-                <p className="text-[10px] text-muted-foreground">{d.category} · {d.unit}</p>
+                <p className="text-[10px] text-muted-foreground">{d.category} · {unitLabel(d.unit, lang === "rw" ? "rw" : "en")}</p>
               </div>
               <button
                 type="button"

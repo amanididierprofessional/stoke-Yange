@@ -14,6 +14,8 @@ export const Route = createFileRoute("/history")({
       { title: "History — Stoke Yange" },
       { name: "description", content: "All sales with daily cash and credit summaries." },
       { property: "og:title", content: "History — Stoke Yange" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       { property: "og:description", content: "All sales with daily cash and credit summaries." },
     ],
   }),

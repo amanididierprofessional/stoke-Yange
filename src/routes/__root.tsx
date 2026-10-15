@@ -9,7 +9,7 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
-import { Capacitor } from "@capacitor/core";
+import { registerOfflineApp } from "@/lib/offline";
 import "@fontsource-variable/outfit";
 
 import { I18nProvider } from "@/lib/i18n";
@@ -124,18 +124,7 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) return; // Native builds load bundled assets; no service worker is needed.
-    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-    const serviceWorkers = navigator.serviceWorker;
-    // The first controlled reload warms the app's JS/CSS chunks into the offline cache.
-    if (!serviceWorkers.controller && !sessionStorage.getItem("stoke-yange-sw-reloaded")) {
-      serviceWorkers.addEventListener("controllerchange", () => {
-        if (sessionStorage.getItem("stoke-yange-sw-reloaded")) return;
-        sessionStorage.setItem("stoke-yange-sw-reloaded", "1");
-        window.location.reload();
-      }, { once: true });
-    }
-    serviceWorkers.register("/sw.js", { scope: "/" }).catch((error) => {
+    registerOfflineApp().catch((error) => {
       console.warn("[offline] Service worker registration failed:", error);
     });
   }, []);

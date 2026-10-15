@@ -23,6 +23,8 @@ export const Route = createFileRoute("/settings")({
       { title: "Settings — Stoke Yange" },
       { name: "description", content: "Shop profile, backups and data reset." },
       { property: "og:title", content: "Settings — Stoke Yange" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       { property: "og:description", content: "Shop profile, backups and data reset." },
     ],
   }),

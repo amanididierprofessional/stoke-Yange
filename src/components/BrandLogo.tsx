@@ -11,7 +11,7 @@ export function BrandLogo({
   alt?: string;
 }) {
   return (
-    <span className={cn("inline-flex shrink-0 overflow-hidden rounded-xl shadow-card", className)}>
+    <span className={cn("inline-flex shrink-0 overflow-hidden rounded-xl", className)}>
       <img
         src="/icon-512.png"
         alt={alt}

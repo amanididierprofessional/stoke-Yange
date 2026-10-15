@@ -10,3 +10,5 @@
 <!-- LOVABLE:END -->
 
 - All shop data lives on-device in IndexedDB via Dexie (`src/lib/db.ts`); every write goes through `src/lib/actions.ts` and queues an outbox row — keeps the app fully offline and ready for later cloud sync.
+- AppShell owns startup loading and local-data failure recovery; entry routes never add another splash, so native and web startup share the same experience.
+- Native builds package a public-config-only SPA without a hosted server URL; Android release downloads target the workflow's explicit release tag, so prereleases resolve reliably.

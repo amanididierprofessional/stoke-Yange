@@ -42,6 +42,15 @@ const dict = {
   cancel: ["Cancel", "Reka"],
   category: ["Category", "Icyiciro"],
   unit: ["Unit", "Igipimo"],
+  takePhoto: ["Take product photo", "Fata ifoto y'igicuruzwa"],
+  removePhoto: ["Remove photo", "Kuraho ifoto"],
+  capturePhoto: ["Capture photo", "Fata ifoto"],
+  closeCamera: ["Close camera", "Funga kamera"],
+  retryCamera: ["Try camera again", "Ongera ufungure kamera"],
+  cameraUnsupported: ["Camera access needs a supported browser and HTTPS.", "Kamera ikenera mushakisha iyishyigikira na HTTPS."],
+  cameraDenied: ["Allow camera access and try again. The camera may be in use.", "Emera ko app ikoresha kamera wongere ugerageze. Kamera ishobora kuba ikoreshwa ahandi."],
+  cameraStarting: ["Camera is still starting. Please try again.", "Kamera iracyafunguka. Ongera ugerageze."],
+  cameraFailed: ["Could not capture this photo. Please try again.", "Ifoto ntiyafashwe. Ongera ugerageze."],
   cost: ["Cost price", "Igiciro cyo kurangura"],
   sellPrice: ["Selling price", "Igiciro cyo kugurisha"],
   openingStock: ["Opening stock", "Ububiko bwo gutangira"],
@@ -141,6 +150,16 @@ const dict = {
 } as const;
 
 export type Key = keyof typeof dict;
+
+const unitLabels: Record<string, readonly [string, string]> = {
+  pcs: ["pcs", "ibice"], kg: ["kg", "kiro"], pack: ["pack", "ipaki"],
+  bottle: ["bottle", "icupa"], crate: ["crate", "ikesi"], litre: ["litre", "litiro"],
+};
+
+/** Localize labels, never the canonical unit stored in shop data. */
+export function unitLabel(unit: string, lang: Lang): string {
+  return unitLabels[unit]?.[lang === "rw" ? 1 : 0] ?? unit;
+}
 
 export function reminderText(lang: Lang, name: string, amount: string, shop: string) {
   return lang === "rw"
