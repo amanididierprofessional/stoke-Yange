@@ -293,11 +293,10 @@ export async function recoverPassword(opts: {
   identifier: string;
   fullName: string;
   businessName: string;
-  newPassword: string;
+  newPassword?: string;
 }): Promise<{ ok: true; mode: "email" | "local" } | { ok: false; error: string }> {
   const id = normalizeId(opts.loginType, opts.identifier);
   if (!id) return { ok: false, error: "verify_fail" };
-  if (opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
 
   const client = await ensureSupabase();
 
@@ -328,6 +327,7 @@ export async function recoverPassword(opts: {
 
   // Local-only accounts can be recovered on the same device after matching
   // the identifier and the profile details saved on that device.
+  if (!opts.newPassword || opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
   const account = await getAccount();
   if (!account) return { ok: false, error: navigator.onLine ? "no_account" : "internet_required" };
   const match =
