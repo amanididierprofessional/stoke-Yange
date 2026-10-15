@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const [age, setAge] = useState("");
   const [busy, setBusy] = useState(false);
   const [welcome, setWelcome] = useState(false);
+  const [welcomeKind, setWelcomeKind] = useState<"login" | "signup" | "recover">("login");
   const [recoverFailed, setRecoverFailed] = useState(false);
 
   useEffect(() => {
@@ -95,6 +97,14 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   const continueStep1 = async () => {
+    if (mode === "signup" && step === 1) {
+      if (!business.trim() || !fullName.trim()) {
+        toast.error(t("profileRequired"));
+        return;
+      }
+      setStep(2);
+      return;
+    }
     if (!identifier.trim()) {
       toast.error(tab === "phone" ? t("phone") : t("email"));
       return;
@@ -141,11 +151,8 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         toast.error(t("badLogin"));
         return;
       }
+      setWelcomeKind("login");
       setWelcome(true);
-      setTimeout(() => {
-        setOpen(false);
-        onAuthed?.();
-      }, 900);
       return;
     }
     if (showConfirm && confirm !== password) {
@@ -160,6 +167,18 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   const submitProfile = async () => {
+    if (!identifier.trim()) {
+      toast.error(tab === "phone" ? t("phone") : t("email"));
+      return;
+    }
+    if (password.length < MIN_PASSWORD) {
+      toast.error(t("passwordMin"));
+      return;
+    }
+    if (showConfirm && confirm !== password) {
+      toast.error(t("passwordMismatch"));
+      return;
+    }
     if (!fullName.trim() || !business.trim()) {
       toast.error(t("profileRequired"));
       return;
@@ -172,7 +191,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         password,
         fullName,
         businessName: business,
-        age,
+        age: "",
       });
       if (!res.ok) {
         if (res.error === "exists") {
@@ -207,11 +226,8 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
         toast.error(t("signupFailed"));
         return;
       }
+      setWelcomeKind("signup");
       setWelcome(true);
-      setTimeout(() => {
-        setOpen(false);
-        onAuthed?.();
-      }, 1000);
     } catch (error) {
       console.error("[auth-ui] sign up failed", error);
       toast.error(lang === "rw"
@@ -229,9 +245,10 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     }
     setBusy(true);
     const res = await recoverPassword({
+      loginType: tab,
+      identifier,
       fullName,
       businessName: business,
-      age,
       newPassword: password,
     });
     setBusy(false);
@@ -241,11 +258,8 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       return;
     }
     setRecoverFailed(false);
+    setWelcomeKind("recover");
     setWelcome(true);
-    setTimeout(() => {
-      setOpen(false);
-      onAuthed?.();
-    }, 1000);
   };
 
   return (
@@ -267,10 +281,10 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           <div className="mb-4 text-center">
             <BrandLogo className="mx-auto mb-3 size-16 rounded-2xl" />
             <h2 className="text-lg font-bold">
-              {welcome ? t("welcomeBtn") : mode === "recover" ? t("recoverTitle") : mode === "login" ? t("signIn") : t("signUp")}
+              {welcome ? (welcomeKind === "signup" ? (lang === "rw" ? "Kwiyandikisha byakunze" : "Registration successful") : welcomeKind === "recover" ? (lang === "rw" ? "Reba ubutumwa bwawe" : "Check your recovery instructions") : (lang === "rw" ? "Kwinjira byakunze" : "Sign-in successful")) : mode === "recover" ? t("recoverTitle") : mode === "login" ? t("signIn") : (mode === "signup" && step === 1 ? (lang === "rw" ? "Murakaza neza" : "Welcome") : t("signUp"))}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {welcome ? "Murakaza neza! Your shop is opening…" : mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
+              {welcome ? (welcomeKind === "signup" ? (lang === "rw" ? "Konti yawe yakozwe neza." : "Your account has been created.") : welcomeKind === "recover" ? (lang === "rw" ? "Kurikiza amabwiriza yo kugarura konti." : "Follow the recovery instructions to continue.") : (lang === "rw" ? "Wakiriye neza. Ushobora gukomeza." : "You are signed in and ready to continue.")) : mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
             </p>
           </div>
 
@@ -299,7 +313,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             </div>
           )}
 
-          {!welcome && step === 1 && mode !== "recover" && (
+          {!welcome && ((mode === "login" && step === 1) || (mode === "signup" && step === 2)) && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
                 {(["phone", "email"] as const).map((k) => (
@@ -344,13 +358,13 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
               <button
                 type="button"
                 disabled={busy}
-                onClick={continueStep1}
+                onClick={mode === "signup" ? submitProfile : continueStep1}
                 className={cn(
                   "h-12 w-full rounded-full font-semibold text-primary-foreground transition-colors",
                   welcome ? "bg-success" : "bg-primary",
                 )}
               >
-                {busy ? (lang === "rw" ? "Birimo kwinjira…" : "Signing in…") : mode === "login" ? t("signIn") : t("continue")}
+                {busy ? (lang === "rw" ? "Birimo kwinjira…" : "Please wait…") : mode === "login" ? t("signIn") : (lang === "rw" ? "Fungura konti" : "Create account")}
               </button>
               {mode === "login" && !busy && (
                 <button type="button" className="w-full text-center text-xs font-medium text-primary" onClick={goRecover}>
@@ -360,14 +374,22 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             </div>
           )}
 
-          {(step === 2 || mode === "recover") && !welcome && (
+          {((mode === "signup" && step === 1) || mode === "recover") && !welcome && (
             <div className="space-y-3">
-              <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
-              <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
-              <Input type="number" inputMode="numeric" placeholder={t("age")} value={age} onChange={(e) => setAge(e.target.value)} className="h-12 rounded-xl" />
-              {mode === "recover" && (
+              {mode === "signup" && <>
+                <p className="text-sm leading-relaxed text-muted-foreground">{lang === "rw" ? "Kuva uyu munsi, ububiko bw'iduka ryawe uzajya ubufata kuri telefone yawe." : "From today, your stock will be right on your phone."}</p>
+                <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
+                <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
+              </>}
+              {mode === "recover" && <>
+                <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
+                  {(["phone", "email"] as const).map((k) => <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>{k === "phone" ? t("phone") : t("email")}</button>)}
+                </div>
+                <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
+                <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
+                <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
                 <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
-              )}
+              </>}
               <button
                 type="button"
                 disabled={busy}
@@ -402,9 +424,9 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
 
           {welcome && (
             <div className="flex flex-col items-center gap-3 py-5" role="status" aria-live="polite">
-              <div className="rounded-full bg-primary/10 p-4"><PremiumDots /></div>
-              <p className="text-sm font-semibold text-foreground">Murakaza neza!</p>
-              <p className="text-center text-xs text-muted-foreground">Your shop is ready. Taking you in now.</p>
+              <div className="rounded-full bg-orange-50 p-4 text-orange-500 animate-in zoom-in duration-500"><CheckCircle2 className="size-14 stroke-[2.5]" /></div>
+              <p className="text-center text-sm text-muted-foreground">{welcomeKind === "signup" ? (lang === "rw" ? "Konti yawe ya Stoke Yange iriteguye." : "Your Stoke Yange account is ready.") : welcomeKind === "recover" ? (lang === "rw" ? "Kurikiza amabwiriza yo kugarura konti." : "Follow the recovery instructions.") : (lang === "rw" ? "Ubu ushobora gukomeza gukoresha iduka ryawe." : "You can now continue to your shop.")}</p>
+              <button type="button" onClick={() => { setOpen(false); onAuthed?.(); }} className="mt-2 h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">{lang === "rw" ? "Mukomeze" : "Continue"}</button>
             </div>
           )}
         </div>
