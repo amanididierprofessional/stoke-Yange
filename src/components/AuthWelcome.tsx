@@ -29,10 +29,10 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [fullName, setFullName] = useState("");
   const [business, setBusiness] = useState("");
-  const [age, setAge] = useState("");
   const [busy, setBusy] = useState(false);
   const [welcome, setWelcome] = useState(false);
   const [welcomeKind, setWelcomeKind] = useState<"login" | "signup" | "recover">("login");
+  const [recoveryMode, setRecoveryMode] = useState<"email" | "local">("email");
   const [recoverFailed, setRecoverFailed] = useState(false);
 
   useEffect(() => {
@@ -253,11 +253,17 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     });
     setBusy(false);
     if (!res.ok) {
-      toast.error(t("verifyFail"));
+      const message = res.error === "phone_support"
+        ? (lang === "rw" ? "Kugarura konti ukoresheje telefone bisaba ubufasha bwacu. Twandikire kuri telefoni cyangwa WhatsApp." : "Phone-based account recovery needs our support. Contact us by phone or WhatsApp.")
+        : res.error === "internet_required"
+          ? (lang === "rw" ? "Ukeneye internet kugira ngo ugarure konti." : "Connect to the internet to recover your account.")
+          : t("verifyFail");
+      toast.error(message);
       setRecoverFailed(true);
       return;
     }
     setRecoverFailed(false);
+    setRecoveryMode(res.mode);
     setWelcomeKind("recover");
     setWelcome(true);
   };
@@ -284,7 +290,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
               {welcome ? (welcomeKind === "signup" ? (lang === "rw" ? "Kwiyandikisha byakunze" : "Registration successful") : welcomeKind === "recover" ? (lang === "rw" ? "Reba ubutumwa bwawe" : "Check your recovery instructions") : (lang === "rw" ? "Kwinjira byakunze" : "Sign-in successful")) : mode === "recover" ? t("recoverTitle") : mode === "login" ? t("signIn") : (mode === "signup" && step === 1 ? (lang === "rw" ? "Murakaza neza" : "Welcome") : t("signUp"))}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {welcome ? (welcomeKind === "signup" ? (lang === "rw" ? "Konti yawe yakozwe neza." : "Your account has been created.") : welcomeKind === "recover" ? (lang === "rw" ? "Kurikiza amabwiriza yo kugarura konti." : "Follow the recovery instructions to continue.") : (lang === "rw" ? "Wakiriye neza. Ushobora gukomeza." : "You are signed in and ready to continue.")) : mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
+              {welcome ? (welcomeKind === "signup" ? (lang === "rw" ? "Konti yawe yakozwe neza." : "Your account has been created.") : welcomeKind === "recover" ? (recoveryMode === "email" ? (lang === "rw" ? "Twakohereje ubutumwa kuri email yawe. Fungura email ukurikize amabwiriza yo guhindura ijambo ry'ibanga." : "We sent a recovery link to your email. Open it and follow the instructions to change your password.") : (lang === "rw" ? "Ijambo ry'ibanga kuri iki gikoresho ryavuguruwe. Injira ukoresheje irishya." : "The password on this device was updated. Sign in with the new password.")) : (lang === "rw" ? "Wakiriye neza. Ushobora gukomeza." : "You are signed in and ready to continue.")) : mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
             </p>
           </div>
 
@@ -393,7 +399,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
               <button
                 type="button"
                 disabled={busy}
-                onClick={mode === "recover" ? submitRecover : submitProfile}
+                onClick={mode === "recover" ? submitRecover : continueStep1}
                 className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground"
               >
                 {busy
@@ -426,7 +432,19 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             <div className="flex flex-col items-center gap-3 py-5" role="status" aria-live="polite">
               <div className="rounded-full bg-orange-50 p-4 text-orange-500 animate-in zoom-in duration-500"><CheckCircle2 className="size-14 stroke-[2.5]" /></div>
               <p className="text-center text-sm text-muted-foreground">{welcomeKind === "signup" ? (lang === "rw" ? "Konti yawe ya Stoke Yange iriteguye." : "Your Stoke Yange account is ready.") : welcomeKind === "recover" ? (lang === "rw" ? "Kurikiza amabwiriza yo kugarura konti." : "Follow the recovery instructions.") : (lang === "rw" ? "Ubu ushobora gukomeza gukoresha iduka ryawe." : "You can now continue to your shop.")}</p>
-              <button type="button" onClick={() => { setOpen(false); onAuthed?.(); }} className="mt-2 h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">{lang === "rw" ? "Mukomeze" : "Continue"}</button>
+              <button type="button" onClick={() => {
+                if (welcomeKind === "recover") {
+                  setWelcome(false);
+                  setMode("login");
+                  setStep(1);
+                  setPassword("");
+                  setConfirm("");
+                  setShowConfirm(false);
+                  return;
+                }
+                setOpen(false);
+                onAuthed?.();
+              }} className="mt-2 h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">{lang === "rw" ? "Mukomeze" : "Continue"}</button>
             </div>
           )}
         </div>
