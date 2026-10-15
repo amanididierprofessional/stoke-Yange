@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Minus, Plus, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +33,7 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
   const [type, setType] = useState<SaleType>("cash");
   const [partyId, setPartyId] = useState<number | "new" | "">("");
   const [newName, setNewName] = useState("");
+  const swipeStartY = useRef<number | null>(null);
   const customers = useLiveQuery(() => db.parties.where("kind").equals("customer").toArray(), []) ?? [];
 
   useEffect(() => {
@@ -112,6 +113,19 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
     <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
       <button type="button" className="absolute inset-0 bg-black/50" aria-label="Close" onClick={onClose} />
       <div className="relative z-[81] flex max-h-[90vh] w-full max-w-md flex-col rounded-t-3xl bg-background shadow-2xl sm:rounded-3xl">
+        <div
+          className="flex justify-center pt-2 pb-1 sm:hidden"
+          onTouchStart={(e) => { swipeStartY.current = e.touches[0]?.clientY ?? null; }}
+          onTouchEnd={(e) => {
+            const startY = swipeStartY.current;
+            const endY = e.changedTouches[0]?.clientY;
+            swipeStartY.current = null;
+            if (startY !== null && endY !== undefined && endY - startY > 70) onClose();
+          }}
+          aria-label="Swipe down to close"
+        >
+          <div className="h-1.5 w-12 rounded-full bg-muted-foreground/40" />
+        </div>
         <div className="flex items-center gap-3 border-b px-4 py-3">
           <ProductThumb emoji={product.emoji} image={product.image} color={product.color} name={product.name} className="size-14 shrink-0" emojiClassName="text-3xl" />
           <div className="min-w-0 flex-1">
