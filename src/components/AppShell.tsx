@@ -33,7 +33,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
-  const isLanding = path === "/welcome" || path.startsWith("/welcome/");
+  // Public website pages must never initialize the app shell or show auth.
+  const isLanding = path === "/welcome" || path.startsWith("/welcome/") || path === "/install-android" || path.startsWith("/install-android/");
   const isNative = Capacitor.isNativePlatform();
 
   const onAuthed = useCallback(() => setAuthed(true), []);
