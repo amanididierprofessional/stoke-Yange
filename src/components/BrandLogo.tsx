@@ -17,7 +17,7 @@ export function BrandLogo({
         alt={alt}
         width={512}
         height={512}
-        className={cn("h-full w-full object-contain", imgClassName)}
+        className={cn("h-full w-full object-cover", imgClassName)}
         decoding="async"
       />
     </span>
