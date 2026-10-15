@@ -91,6 +91,18 @@ jobs:
       - name: Copy bundled app into Android project
         run: npx cap sync android
 
+      - name: Declare native camera permission
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          permission = '    <uses-permission android:name="android.permission.CAMERA" />\n'
+          if "android.permission.CAMERA" not in s:
+              s = s.replace("<application", permission + "    <application", 1)
+              p.write_text(s)
+          PY
+
       - name: Build debug APK
         run: cd android && ./gradlew assembleDebug
 
