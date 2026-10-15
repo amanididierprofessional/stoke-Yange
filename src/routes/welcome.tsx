@@ -192,6 +192,13 @@ function WelcomePage() {
   };
 
   const install = async () => {
+    // On Android, "Install app" must download the native APK, never enter
+    // the web/PWA route (which may send a first-time user to the login screen).
+    const androidDevice = isAndroid || (typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent));
+    if (androidDevice) {
+      window.location.assign(ANDROID_APK_URL);
+      return;
+    }
     if (deferred) {
       setBusy(true);
       try {
