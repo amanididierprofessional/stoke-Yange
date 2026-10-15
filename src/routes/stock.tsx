@@ -14,7 +14,7 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { cn } from "@/lib/utils";
 import { unitLabel } from "@/lib/i18n";
 import { Capacitor } from "@capacitor/core";
-import { Camera } from "@capacitor/camera";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/stock")({
@@ -213,7 +213,30 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     try {
       if (Capacitor.isNativePlatform()) {
         const permission = await Camera.requestPermissions({ permissions: ["camera"] });
-        if (permission.camera !== "granted") throw new Error("permission");
+        if (permission.camera !== "granted") {
+          setCameraError(lang === "rw"
+            ? "Emera Stoke Yange gukoresha kamera muri Settings za telefone yawe, hanyuma wongere ugerageze."
+            : "Please allow Stoke Yange to use the camera in your phone Settings, then try again.");
+          return;
+        }
+        if (request !== cameraRequest.current) return;
+        // Native WebViews do not consistently grant getUserMedia access even after
+        // the Android camera permission is granted. Use the native camera plugin.
+        const photo = await Camera.getPhoto({
+          quality: 82,
+          width: 900,
+          height: 900,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera,
+          promptLabelHeader: lang === "rw" ? "Fata ifoto y'igicuruzwa" : "Take product photo",
+          promptLabelCancel: lang === "rw" ? "Reka" : "Cancel",
+          promptLabelPhoto: lang === "rw" ? "Hitamo ifoto" : "Choose photo",
+        });
+        if (request !== cameraRequest.current) return;
+        if (photo.dataUrl) setF((prev) => ({ ...prev, image: photo.dataUrl! }));
+        setCameraOpen(false);
+        return;
       }
       if (request !== cameraRequest.current) return;
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -368,7 +391,32 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
             <datalist id="cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
           </Field>
           <Field label={t("unit")}>
-            <select value={f.unit} onChange={set("unit")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm">{UNITS.map((u) => <option key={u} value={u}>{unitLabel(u, lang)}</option>)}</select>
+            <div className="grid grid-cols-2 gap-2">
+              {UNITS.map((u) => {
+                const selected = f.unit === u;
+                const unitIcons: Record<string, string> = { pcs: "🧩", kg: "⚖️", pack: "📦", bottle: "🧴", crate: "🧺", litre: "🫗", sack: "🌾" };
+                return (
+                  <button
+                    key={u}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setF((prev) => ({ ...prev, unit: u }))}
+                    className={cn(
+                      "flex min-h-12 items-center gap-2 rounded-2xl border px-3 py-2 text-left text-sm transition-all",
+                      selected
+                        ? "border-primary bg-primary/10 text-foreground shadow-sm ring-1 ring-primary/30"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-accent/40",
+                    )}
+                  >
+                    <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-muted text-lg">{unitIcons[u] ?? "📦"}</span>
+                    <span className="min-w-0 flex-1 font-medium">{unitLabel(u, lang)}</span>
+                    <span className={cn("grid size-4 shrink-0 place-items-center rounded-full border", selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40")}>
+                      {selected && <span className="size-1.5 rounded-full bg-current" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </Field>
           <Field label={t("cost")}><Input inputMode="numeric" value={f.cost} onChange={set("cost")} className="h-11 rounded-xl" /></Field>
           <Field label={t("sellPrice")}><Input inputMode="numeric" value={f.price} onChange={set("price")} className="h-11 rounded-xl" /></Field>
