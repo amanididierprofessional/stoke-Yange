@@ -21,7 +21,7 @@ const content = {
     back: "Subira ku rubuga", subtitle: "Ubufasha bwo gushyiramo application",
     eyebrow: "ANDROID · INTAMBWE 4", title: "Manura, hanyuma ushyiremo Stoke Yange",
     intro: "Kanda buto yo kumanura. Dosiye izatangira kumanuka; urupapuro ruzaguma rugaragaza intambwe zo kuyishyiramo.",
-    download: "Manura app ubu", file: "Dosiye: stoke-yange.apk",
+    download: "Downloadinga application", file: "Dosiye: stoke-yange.apk",
     safetyTitle: "Umutekano wawe", safety: "Emera gusa dosiye ya Stoke Yange wakuye kuri iyi link yemewe. Ntuzimye Play Protect.",
     steps: [
       { title: "Manura application", body: "Kanda “Manura app ubu” hejuru. Tegereza kugeza download irangiye.", screen: "stoke-yange.apk", hint: "Reba ikimenyetso cya download muri Chrome cyangwa mu butumwa bwa telefone.", visual: "download" },
