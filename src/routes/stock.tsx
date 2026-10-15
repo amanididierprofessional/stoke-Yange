@@ -390,6 +390,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
             <input list="cats" value={f.category} onChange={set("category")} className="h-11 w-full rounded-xl border bg-card px-3 text-sm" />
             <datalist id="cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
           </Field>
+          <div className="col-span-2">
           <Field label={t("unit")}>
             <div className="grid grid-cols-2 gap-2">
               {UNITS.map((u) => {
@@ -418,6 +419,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
               })}
             </div>
           </Field>
+          </div>
           <Field label={t("cost")}><Input inputMode="numeric" value={f.cost} onChange={set("cost")} className="h-11 rounded-xl" /></Field>
           <Field label={t("sellPrice")}><Input inputMode="numeric" value={f.price} onChange={set("price")} className="h-11 rounded-xl" /></Field>
           {!p && <Field label={t("openingStock")}><Input inputMode="numeric" value={f.stock} onChange={set("stock")} className="h-11 rounded-xl" /></Field>}
