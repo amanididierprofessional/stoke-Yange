@@ -234,6 +234,10 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   const submitRecover = async () => {
+    if (!identifier.trim() || !fullName.trim() || !business.trim()) {
+      toast.error(lang === "rw" ? "Uzuza telefone cyangwa email, amazina yawe n'izina ry'iduka." : "Enter your phone or email, your full name, and your business name.");
+      return;
+    }
     if (password.length < MIN_PASSWORD) {
       toast.error(t("passwordMin"));
       return;
@@ -448,14 +452,3 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   );
 }
 
-
-function PremiumDots({ label }: { label?: string }) {
-  return (
-    <span className="inline-flex items-center justify-center gap-1.5" aria-label={label ?? "Loading"}>
-      {[0, 1, 2, 3].map((dot) => (
-        <span key={dot} className="sy-loading-dot" style={{ animationDelay: `${dot * 140}ms` }} />
-      ))}
-      {label && <span className="ml-2">{label}</span>}
-    </span>
-  );
-}
