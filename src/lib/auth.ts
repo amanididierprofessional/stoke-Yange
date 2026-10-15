@@ -289,33 +289,58 @@ export async function signIn(opts: {
 }
 
 export async function recoverPassword(opts: {
+  loginType: "phone" | "email";
+  identifier: string;
   fullName: string;
   businessName: string;
-  age: string;
   newPassword: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const account = await getAccount();
-  if (!account) return { ok: false, error: "no_account" };
-  const match =
-    account.fullName.toLowerCase() === opts.fullName.trim().toLowerCase() &&
-    account.businessName.toLowerCase() === opts.businessName.trim().toLowerCase() &&
-    String(account.age) === String(opts.age).trim();
-  if (!match) return { ok: false, error: "verify_fail" };
+}): Promise<{ ok: true; mode: "email" | "local" } | { ok: false; error: string }> {
+  const id = normalizeId(opts.loginType, opts.identifier);
+  if (!id) return { ok: false, error: "verify_fail" };
   if (opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
+
+  const client = await ensureSupabase();
+
+  // Cloud accounts must use Supabase's actual recovery flow. Never claim a
+  // local password change also changed the cloud password.
+  if (supabaseConfigured && client && navigator.onLine) {
+    if (opts.loginType !== "email") {
+      return { ok: false, error: "phone_support" };
+    }
+    const account = await getAccount();
+    if (account && (
+      account.loginType !== "email" ||
+      account.identifier !== id ||
+      account.fullName.trim().toLowerCase() !== opts.fullName.trim().toLowerCase() ||
+      account.businessName.trim().toLowerCase() !== opts.businessName.trim().toLowerCase()
+    )) {
+      return { ok: false, error: "verify_fail" };
+    }
+    const { error } = await client.auth.resetPasswordForEmail(id, {
+      redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+    });
+    if (error) {
+      console.warn("[auth] password reset request", error.message);
+      return { ok: false, error: "recovery_unavailable" };
+    }
+    return { ok: true, mode: "email" };
+  }
+
+  // Local-only accounts can be recovered on the same device after matching
+  // the identifier and the profile details saved on that device.
+  const account = await getAccount();
+  if (!account) return { ok: false, error: navigator.onLine ? "no_account" : "internet_required" };
+  const match =
+    account.loginType === opts.loginType &&
+    account.identifier === id &&
+    account.fullName.trim().toLowerCase() === opts.fullName.trim().toLowerCase() &&
+    account.businessName.trim().toLowerCase() === opts.businessName.trim().toLowerCase();
+  if (!match) return { ok: false, error: "verify_fail" };
 
   account.passwordHash = await sha256(opts.newPassword);
   await saveAccount(account);
-  setLoggedIn(true);
-
-  const client = await ensureSupabase();
-  if (client) {
-    try {
-      await client.auth.updateUser({ password: opts.newPassword });
-    } catch {
-      /* */
-    }
-  }
-  return { ok: true };
+  setLoggedIn(false);
+  return { ok: true, mode: "local" };
 }
 
 export function clearSessionOnly() {
