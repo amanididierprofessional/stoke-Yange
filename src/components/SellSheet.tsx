@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { db, type Product, type SaleType } from "@/lib/db";
 import { addParty, fmt, recordSale, reverseSale } from "@/lib/actions";
-import { useI18n, type Key } from "@/lib/i18n";
+import { useI18n, unitLabel, type Key } from "@/lib/i18n";
 import { ProductThumb } from "@/components/ProductThumb";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +26,7 @@ export async function quickSell(p: Product, t: (k: Key) => string) {
 }
 
 export function SellSheet({ product, onClose }: { product: Product | null; onClose: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [qty, setQty] = useState(1);
   const [qtyText, setQtyText] = useState("1");
   const [price, setPrice] = useState("");
@@ -117,7 +117,7 @@ export function SellSheet({ product, onClose }: { product: Product | null; onClo
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-bold">{product.name}</h2>
             <p className="text-sm text-muted-foreground">
-              {product.stock} {product.unit} {t("left")}
+              {product.stock} {unitLabel(product.unit, lang)} {t("left")}
             </p>
           </div>
           <button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full border" aria-label="Close">

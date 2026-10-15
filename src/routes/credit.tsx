@@ -17,6 +17,8 @@ export const Route = createFileRoute("/credit")({
       { title: "Credit (Amadeni) — Stoke Yange" },
       { name: "description", content: "Track who owes you and which suppliers you owe." },
       { property: "og:title", content: "Credit — Stoke Yange" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       { property: "og:description", content: "Track who owes you and which suppliers you owe." },
     ],
   }),
