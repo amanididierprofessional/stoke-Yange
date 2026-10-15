@@ -40,6 +40,14 @@ function RootEntry() {
   const [showApp, setShowApp] = useState(false);
 
   useEffect(() => {
+    // Supabase password-recovery links return to the site with a recovery token
+    // in the URL hash. Open the app shell for this callback instead of redirecting
+    // the user back to the public marketing page.
+    if (typeof window !== "undefined" && window.location.hash.includes("type=recovery")) {
+      enterAppMode();
+      setShowApp(true);
+      return;
+    }
     // A native Capacitor install is already the app; never route it through the
     // PWA/marketing mode gate, which otherwise leaves a logo-only screen visible.
     if (Capacitor.isNativePlatform()) {
