@@ -223,7 +223,9 @@ function WelcomePage() {
       }
       return;
     }
-    goApp();
+    // If the browser cannot offer installation, keep the visitor on the public
+    // website and show the existing install guidance instead of opening app auth.
+    return;
   };
 
   const features = [
