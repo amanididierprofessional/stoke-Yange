@@ -4,7 +4,6 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
-  getAccount,
   isLoggedIn,
   MIN_PASSWORD,
   recoverPassword,
@@ -83,16 +82,12 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     setShowConfirm(false);
     setRecoverFailed(false);
   };
-  const goRecover = async () => {
-    const a = await getAccount();
-    if (!a) {
-      toast.message(t("needSignUp"));
-      goSignup();
-      return;
-    }
+  const goRecover = () => {
     setMode("recover");
     setStep(2);
     setPassword("");
+    setFullName("");
+    setBusiness("");
     setRecoverFailed(false);
   };
 
