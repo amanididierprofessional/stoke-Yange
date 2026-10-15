@@ -123,8 +123,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!ready) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
-        <BrandLogo className="mb-6 size-16 rounded-3xl" />
+        <BrandLogo className="mb-5 size-16 rounded-none" imgClassName="rounded-none object-contain" />
         <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
+        <div className="mt-4 flex items-center justify-center gap-2" role="status" aria-label={lang === "rw" ? "App irafunguka" : "App is loading"}>
+          <span className="sy-loading-dot" />
+          <span className="sy-loading-dot" />
+          <span className="sy-loading-dot" />
+          <span className="sy-loading-dot" />
+        </div>
+        <div className="mt-3 h-1 w-36 overflow-hidden rounded-full bg-primary/10">
+          <div className="h-full w-2/5 animate-pulse rounded-full bg-primary" />
+        </div>
         {startupError && (
           <div className="mt-4 max-w-xs text-center" role="alert">
             <p className="text-sm text-muted-foreground">{lang === "rw" ? "Amakuru yo kuri telefone ntiyafungutse. Funga izindi paji z'iyi app wongere ugerageze." : "Device data could not open. Close other copies of this app and try again."}</p>
