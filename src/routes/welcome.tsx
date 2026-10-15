@@ -134,7 +134,7 @@ type BIPEvent = Event & {
 
 function WelcomePage() {
   const navigate = useNavigate();
-  const [lang, setLang] = useState<Lang>("en");
+  const [lang, setLang] = useState<Lang>("rw");
   const [languageReady, setLanguageReady] = useState(false);
   const t = copy[lang];
   const [deferred, setDeferred] = useState<BIPEvent | null>(null);
