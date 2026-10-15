@@ -343,6 +343,27 @@ export async function recoverPassword(opts: {
   return { ok: true, mode: "local" };
 }
 
+
+export async function completePasswordRecovery(newPassword: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
+  const client = await ensureSupabase();
+  if (!client || !supabaseConfigured || !navigator.onLine) {
+    return { ok: false, error: "recovery_unavailable" };
+  }
+  const { error } = await client.auth.updateUser({ password: newPassword });
+  if (error) {
+    console.warn("[auth] finish password recovery", error.message);
+    return { ok: false, error: "recovery_unavailable" };
+  }
+  const account = await getAccount();
+  if (account) {
+    account.passwordHash = await sha256(newPassword);
+    await saveAccount(account);
+  }
+  setLoggedIn(false);
+  return { ok: true };
+}
+
 export function clearSessionOnly() {
   setLoggedIn(false);
 }
