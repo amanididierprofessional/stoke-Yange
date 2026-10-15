@@ -7,6 +7,7 @@ import {
   isLoggedIn,
   MIN_PASSWORD,
   recoverPassword,
+  completePasswordRecovery,
   signIn,
   signUp,
 } from "@/lib/auth";
@@ -32,9 +33,18 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const [welcome, setWelcome] = useState(false);
   const [welcomeKind, setWelcomeKind] = useState<"login" | "signup" | "recover">("login");
   const [recoveryMode, setRecoveryMode] = useState<"email" | "local">("email");
+  const [recoveryLinkOpened, setRecoveryLinkOpened] = useState(false);
+  const [localRecoveryNeedsPassword, setLocalRecoveryNeedsPassword] = useState(false);
   const [recoverFailed, setRecoverFailed] = useState(false);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash.includes("type=recovery")) {
+      setMode("recover");
+      setStep(2);
+      setRecoveryLinkOpened(true);
+      setOpen(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const logged = await isLoggedIn();
@@ -89,6 +99,8 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     setFullName("");
     setBusiness("");
     setRecoverFailed(false);
+    setRecoveryLinkOpened(false);
+    setLocalRecoveryNeedsPassword(false);
   };
 
   const continueStep1 = async () => {
@@ -234,11 +246,30 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   const submitRecover = async () => {
+    if (recoveryLinkOpened) {
+      if (password.length < MIN_PASSWORD) {
+        toast.error(t("passwordMin"));
+        return;
+      }
+      setBusy(true);
+      const result = await completePasswordRecovery(password);
+      setBusy(false);
+      if (!result.ok) {
+        toast.error(lang === "rw" ? "Ijambo ry'ibanga ntiryahinduwe. Ongera ugerageze cyangwa utwandikire." : "Password could not be changed. Try again or contact support.");
+        setRecoverFailed(true);
+        return;
+      }
+      setRecoveryLinkOpened(false);
+      setWelcomeKind("recover");
+      setRecoveryMode("local");
+      setWelcome(true);
+      return;
+    }
     if (!identifier.trim() || !fullName.trim() || !business.trim()) {
       toast.error(lang === "rw" ? "Uzuza telefone cyangwa email, amazina yawe n'izina ry'iduka." : "Enter your phone or email, your full name, and your business name.");
       return;
     }
-    if (password.length < MIN_PASSWORD) {
+    if (localRecoveryNeedsPassword && password.length < MIN_PASSWORD) {
       toast.error(t("passwordMin"));
       return;
     }
@@ -248,10 +279,17 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       identifier,
       fullName,
       businessName: business,
-      newPassword: password,
+      newPassword: password || undefined,
     });
     setBusy(false);
     if (!res.ok) {
+      if (res.error === "password_short") {
+        setLocalRecoveryNeedsPassword(true);
+        setRecoverFailed(false);
+        toast.message(lang === "rw" ? "Andika ijambo ry'ibanga rishya kugira ngo ukomeze." : "Enter a new password to continue.");
+        setPassword("");
+        return;
+      }
       const message = res.error === "phone_support"
         ? (lang === "rw" ? "Kugarura konti ukoresheje telefone bisaba ubufasha bwacu. Twandikire kuri telefoni cyangwa WhatsApp." : "Phone-based account recovery needs our support. Contact us by phone or WhatsApp.")
         : res.error === "internet_required"
@@ -387,13 +425,17 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
                 <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
               </>}
               {mode === "recover" && <>
-                <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
-                  {(["phone", "email"] as const).map((k) => <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>{k === "phone" ? t("phone") : t("email")}</button>)}
-                </div>
-                <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
-                <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
-                <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
-                <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+                {recoveryLinkOpened ? (
+                  <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+                ) : <>
+                  <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
+                    {(["phone", "email"] as const).map((k) => <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>{k === "phone" ? t("phone") : t("email")}</button>)}
+                  </div>
+                  <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
+                  <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
+                  <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
+                  {localRecoveryNeedsPassword && <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />}
+                </>}
               </>}
               <button
                 type="button"
@@ -403,7 +445,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
               >
                 {busy
                   ? (mode === "recover"
-                    ? (lang === "rw" ? "Birimo kuvugurura..." : "Updating password…")
+                    ? (lang === "rw" ? "Birimo kuvugurura..." : "Working…")
                     : (lang === "rw" ? "Birimo gufungura konti..." : "Creating account…"))
                   : t("submit")}
               </button>
