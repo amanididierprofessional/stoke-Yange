@@ -94,7 +94,7 @@ export const CATEGORIES = [
   "Snacks",
   "Toiletries",
 ];
-export const UNITS = ["pcs", "kg", "pack", "bottle", "crate", "litre"];
+export const UNITS = ["pcs", "kg", "pack", "bottle", "crate", "litre", "sack"];
 
 export const PRODUCT_EMOJIS = [
   "📦", "🥛", "🍺", "🥤", "💧", "🧃", "☕", "🍵",
