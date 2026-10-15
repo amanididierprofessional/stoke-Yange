@@ -85,9 +85,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#EA580C" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
-      { title: "Stoke Yange — Gucunga ububiko, igurisha n'amadeni" },
-      { name: "description", content: "Stoke Yange ifasha amaduka gucunga ububiko, kugurisha, gukurikirana amadeni no kubika amakuru kuri telefone. Koresha nta murandasi; amakuru ahuzwa na cloud igihe ubyemeye." },
-      { name: "keywords", content: "Stoke Yange, gucunga iduka, ububiko, igurisha, amadeni, Rwanda, offline POS, shop inventory, sales tracking, Kinyarwanda" },
+      { title: "Stoke Yange | Gucunga ububiko n'igurisha mu Rwanda" },
+      { name: "description", content: "Stoke Yange ni application y'ubuntu ifasha amaduka yo mu Rwanda gucunga ububiko, kwandika igurisha no gukurikirana amadeni. Ikora no mu gihe nta murandasi." },
+      { name: "robots", content: "index, follow, max-image-preview:large" },
       { name: "application-name", content: "Stoke Yange" },
       { property: "og:site_name", content: "Stoke Yange" },
       { property: "og:title", content: "Stoke Yange — Gucunga ububiko n'igurisha" },
@@ -118,7 +118,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="rw">
       <head>
         <HeadContent />
       </head>
