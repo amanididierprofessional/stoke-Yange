@@ -10,6 +10,13 @@ on:
 permissions:
   contents: write
 
+# Multiple rapid commits previously ran APK uploads against the same release
+# at once. Serialize the workflow per branch so release asset replacement
+# cannot race and return stale-asset 404 errors.
+concurrency:
+  group: stoke-yange-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-debug:
     runs-on: ubuntu-latest
