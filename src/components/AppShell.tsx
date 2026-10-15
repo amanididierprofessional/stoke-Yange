@@ -11,6 +11,7 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { AuthWelcome } from "@/components/AuthWelcome";
 import { BrandLogo } from "@/components/BrandLogo";
+import { Button } from "@/components/ui/button";
 
 export function useShopName() {
   return useLiveQuery(() => db.settings.get("shopName"), [])?.value ?? "Iduka Ryanjye";
@@ -18,8 +19,9 @@ export function useShopName() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
-  const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+  const [online, setOnline] = useState(true);
   const [ready, setReady] = useState(false);
+  const [startupError, setStartupError] = useState(false);
   const [authed, setAuthed] = useState(false);
   const shop = useShopName();
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
@@ -58,17 +60,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    setStartupError(false);
+    // The system launch splash cannot be removed on Android 12+, but do not
+    // hold a second native splash over the original PWA loading screen.
+    if (isNative) void SplashScreen.hide().catch(() => {});
+    const startupTimeout = window.setTimeout(() => {
+      if (!cancelled) setStartupError(true);
+    }, 8000);
 
     const finishStartup = () => {
       if (cancelled) return;
+      window.clearTimeout(startupTimeout);
+      setStartupError(false);
       setReady(true);
-      // On Android, keep the branded native splash visible until the local app is ready.
-      // The web/PWA continues to use the same in-app loading screen as before.
-      if (isNative) {
-        void SplashScreen.hide().catch((error) => {
-          console.warn("[startup] Could not hide native splash:", error);
-        });
-      }
     };
 
     if (isLanding) {
@@ -78,11 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         // Seed first, then read the small local state in parallel. Cloud sync is never
         // awaited during launch, so a weak connection cannot delay opening the shop.
         await ensureSeeded();
-        const [, , loggedIn] = await Promise.all([
-          db.products.count(),
-          db.sales.count(),
-          isLoggedIn(),
-        ]);
+        const loggedIn = await isLoggedIn();
         if (cancelled) return;
         setAuthed(loggedIn);
         if (navigator.onLine) {
@@ -91,8 +91,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         finishStartup();
       })().catch((error) => {
         console.error("[startup] Local initialization failed:", error);
-        // Fail open to the app shell so a local DB hiccup does not leave a permanent splash.
-        finishStartup();
+        window.clearTimeout(startupTimeout);
+        if (!cancelled) setStartupError(true);
       });
     }
 
@@ -103,6 +103,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("offline", off);
     return () => {
       cancelled = true;
+      window.clearTimeout(startupTimeout);
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
     };
@@ -120,13 +121,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   if (!ready) {
-    // Android's native splash remains visible until initialization completes.
-    // Avoid rendering a second, separate in-app splash over it.
-    if (isNative) return null;
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
         <BrandLogo className="mb-6 size-16 rounded-3xl" />
         <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
+        {startupError && (
+          <div className="mt-4 max-w-xs text-center" role="alert">
+            <p className="text-sm text-muted-foreground">{lang === "rw" ? "Amakuru yo kuri telefone ntiyafungutse. Funga izindi paji z'iyi app wongere ugerageze." : "Device data could not open. Close other copies of this app and try again."}</p>
+            <Button variant="outline" onClick={() => window.location.reload()} className="mt-4 rounded-full">{lang === "rw" ? "Ongera ugerageze" : "Try again"}</Button>
+          </div>
+        )}
       </div>
     );
   }

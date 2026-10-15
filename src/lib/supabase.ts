@@ -33,7 +33,7 @@ export const supabaseAnonKey = pickEnv(
 export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase: SupabaseClient | null = supabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey!, {
+  ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -99,7 +99,7 @@ export async function checkCloudHealth(): Promise<CloudHealth> {
       return base;
     }
     base.session = !!sess.session;
-    base.userId = sess.session?.user?.id;
+    if (sess.session?.user?.id) base.userId = sess.session.user.id;
 
     // Probe profiles table
     const { error: pe } = await supabase.from("profiles").select("id").limit(1);

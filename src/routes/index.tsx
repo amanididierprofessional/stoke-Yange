@@ -9,7 +9,6 @@ import { useI18n } from "@/lib/i18n";
 import { enterAppMode, isAppMode } from "@/lib/app-mode";
 import { CategoryPills } from "@/components/AppShell";
 import { ProductCard, SellSheet } from "@/components/SellSheet";
-import { BrandLogo } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,6 +19,8 @@ export const Route = createFileRoute("/")({
         content: "Sell, stock and credit for small shops — install free or open the app.",
       },
       { property: "og:title", content: "Stoke Yange — Shop stock & credit" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content: "Record sales, track stock and credit, even offline.",
@@ -53,17 +54,8 @@ function RootEntry() {
     navigate({ to: "/welcome", replace: true });
   }, [navigate]);
 
-  if (!showApp) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-8">
-        <BrandLogo className="size-16" />
-        <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
-        <div className="h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-muted">
-          <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
-        </div>
-      </div>
-    );
-  }
+  // AppShell owns the single loading screen; entry-mode detection adds no splash.
+  if (!showApp) return null;
 
   return <SellPage />;
 }
@@ -91,7 +83,7 @@ function SellPage() {
   const low = products.filter((p) => p.stock <= p.min);
   const list = products
     .filter((p) => (cat === "__all" || p.category === cat) && p.name.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => (sold.get(b.id!) ?? 0) - (sold.get(a.id!) ?? 0) || a.name.localeCompare(b.name));
+    .sort((a, b) => (sold.get(b.id ?? -1) ?? 0) - (sold.get(a.id ?? -1) ?? 0) || a.name.localeCompare(b.name));
   const cats = [...new Set([...CATEGORIES, ...products.map((p) => p.category)])];
 
   return (

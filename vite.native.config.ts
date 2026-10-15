@@ -15,6 +15,7 @@ export default defineConfig({
     },
   },
   vite: {
-    envPrefix: ["VITE_", "SUPABASE_", "NEXT_PUBLIC_"],
+    // Only explicitly public configuration may enter the installed app bundle.
+    envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   },
 });

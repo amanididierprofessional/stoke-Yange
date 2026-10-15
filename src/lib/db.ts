@@ -11,9 +11,9 @@ export type Product = {
   min: number;
   emoji: string;
   /** Optional photo URL */
-  image?: string;
+  image?: string | undefined;
   /** Optional colour hex (apparel variants) */
-  color?: string;
+  color?: string | undefined;
   updatedAt: number;
 };
 export type SaleType = "cash" | "credit";

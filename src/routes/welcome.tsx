@@ -26,6 +26,8 @@ export const Route = createFileRoute("/welcome")({
           "Built for small shops and big ones. Works both online and offline. Free to install.",
       },
       { property: "og:title", content: "Stoke Yange — Your shop, on your phone" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         property: "og:description",
         content: "Built for small shops and big ones. Works both online and offline.",
@@ -123,7 +125,7 @@ const copy = {
   },
 } as const;
 
-const ANDROID_APK_URL = "https://github.com/amanididierprofessional/stoke-Yange/releases/latest/download/stoke-yange.apk";
+const ANDROID_APK_URL = "https://github.com/amanididierprofessional/stoke-Yange/releases/download/android-latest/stoke-yange.apk";
 
 type BIPEvent = Event & {
   prompt: () => Promise<void>;
@@ -132,11 +134,8 @@ type BIPEvent = Event & {
 
 function WelcomePage() {
   const navigate = useNavigate();
-  const [lang, setLang] = useState<Lang>(() => {
-    if (typeof window === "undefined") return "en";
-    const s = localStorage.getItem("sy-lang");
-    return s === "rw" ? "rw" : "en";
-  });
+  const [lang, setLang] = useState<Lang>("en");
+  const [languageReady, setLanguageReady] = useState(false);
   const t = copy[lang];
   const [deferred, setDeferred] = useState<BIPEvent | null>(null);
   const [installed, setInstalled] = useState(false);
@@ -152,9 +151,16 @@ function WelcomePage() {
   }, [navigate]);
 
   useEffect(() => {
+    const saved = localStorage.getItem("sy-lang");
+    if (saved === "rw") setLang("rw");
+    setLanguageReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!languageReady) return;
     localStorage.setItem("sy-lang", lang);
     document.documentElement.lang = lang;
-  }, [lang]);
+  }, [lang, languageReady]);
 
   useEffect(() => {
     const hasApp = isStandalone() || preferApp();

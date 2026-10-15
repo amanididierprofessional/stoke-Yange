@@ -11,8 +11,8 @@ export function ProductThumb({
   emojiClassName,
 }: {
   emoji?: string;
-  image?: string;
-  color?: string;
+  image?: string | undefined;
+  color?: string | undefined;
   name?: string;
   className?: string;
   emojiClassName?: string;
