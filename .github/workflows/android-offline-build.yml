@@ -66,7 +66,7 @@ jobs:
           source.resize((1024, 1024), Image.Resampling.LANCZOS).save(out / "icon-only.png")
           
           foreground = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
-          mark = source.resize((660, 660), Image.Resampling.LANCZOS)
+          mark = source.resize((900, 900), Image.Resampling.LANCZOS)
           foreground.alpha_composite(mark, ((1024 - mark.width) // 2, (1024 - mark.height) // 2))
           foreground.save(out / "icon-foreground.png")
           
