@@ -401,7 +401,7 @@ function WelcomePage() {
           <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base">{t.ctaSub}</p>
           <div className="mt-8 flex justify-center">
             {isAndroid && !isStandalone() ? (
-              <a href={ANDROID_APK_URL} download="stoke-yange.apk" className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground sm:w-auto">
+              <a href="/install-android" className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground sm:w-auto">
                 <Download className="size-5 shrink-0" /><span>{t.androidDownload}</span>
               </a>
             ) : (
