@@ -394,7 +394,11 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
                 <Button type="button" disabled={cameraBusy} onClick={() => void openCamera()} className="h-10 w-full rounded-full">{t("retryCamera")}</Button>
               </div>
             ) : (
-              {Capacitor.isNativePlatform() ? <div ref={nativePreviewRef} className="h-72 w-full rounded-xl bg-black" aria-label={lang === "rw" ? "Ishusho ya kamera" : "Camera preview"} /> : <video ref={videoRef} autoPlay playsInline muted className="h-72 w-full rounded-xl bg-black object-contain" />}
+              Capacitor.isNativePlatform() ? (
+                <div ref={nativePreviewRef} className="h-72 w-full rounded-xl bg-black" aria-label={lang === "rw" ? "Ishusho ya kamera" : "Camera preview"} />
+              ) : (
+                <video ref={videoRef} autoPlay playsInline muted className="h-72 w-full rounded-xl bg-black object-contain" />
+              )
             )}
             <div className="flex gap-2">
               {!cameraError && <Button type="button" disabled={cameraBusy} onClick={capturePhoto} className="h-11 flex-1 rounded-full">{t("capturePhoto")}</Button>}
