@@ -154,6 +154,7 @@ export type Key = keyof typeof dict;
 const unitLabels: Record<string, readonly [string, string]> = {
   pcs: ["pcs", "ibice"], kg: ["kg", "kiro"], pack: ["pack", "ipaki"],
   bottle: ["bottle", "icupa"], crate: ["crate", "ikesi"], litre: ["litre", "litiro"],
+  sack: ["sack", "umufuka"],
 };
 
 /** Localize labels, never the canonical unit stored in shop data. */
