@@ -14,7 +14,7 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { cn } from "@/lib/utils";
 import { unitLabel } from "@/lib/i18n";
 import { Capacitor } from "@capacitor/core";
-import { Camera } from "@capacitor/camera";
+import { CameraPreview } from "@capacitor-community/camera-preview";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/stock")({
@@ -177,6 +177,8 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
+  const nativePreviewRef = useRef<HTMLDivElement>(null);
+  const nativePreviewStarted = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const cameraRequest = useRef(0);
   const [cameraBusy, setCameraBusy] = useState(false);
@@ -186,6 +188,10 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     cameraRequest.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    if (Capacitor.isNativePlatform() && nativePreviewStarted.current) {
+      nativePreviewStarted.current = false;
+      void CameraPreview.stop().catch(() => {});
+    }
     setCameraOpen(false);
     setCameraBusy(false);
   };
@@ -193,6 +199,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
   useEffect(() => () => {
     cameraRequest.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
+    if (nativePreviewStarted.current) void CameraPreview.stop().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -212,42 +219,77 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     setCameraOpen(true);
     try {
       if (Capacitor.isNativePlatform()) {
-        // Request Android's runtime permission first, then keep the camera preview
-        // inline in this form using the same getUserMedia/video/canvas flow as the PWA.
-        const permission = await Camera.requestPermissions({ permissions: ["camera"] });
-        if (permission.camera !== "granted") {
-          setCameraError(lang === "rw"
-            ? "Kamera ntiyemerewe. Kanda Allow igihe ubajijwe, cyangwa ujye muri Settings > Apps > Stoke Yange > Permissions > Camera uyemere, hanyuma wongere ugerageze."
-            : "Camera permission is not granted. Tap Allow when prompted, or open Settings > Apps > Stoke Yange > Permissions > Camera, allow it, then try again.");
+        // A native camera preview is more reliable than WebView getUserMedia on Android.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        if (request !== cameraRequest.current) return;
+        const host = nativePreviewRef.current;
+        if (!host) throw new Error("Camera preview area is not ready");
+        const rect = host.getBoundingClientRect();
+        if (rect.width < 10 || rect.height < 10) throw new Error("Camera preview area has no size");
+        await CameraPreview.start({
+          position: "rear",
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          toBack: false,
+          storeToFile: false,
+          disableAudio: true,
+          enableZoom: true,
+        });
+        nativePreviewStarted.current = true;
+        if (request !== cameraRequest.current) {
+          nativePreviewStarted.current = false;
+          await CameraPreview.stop().catch(() => {});
           return;
         }
+      } else {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setCameraError(t("cameraUnsupported"));
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+          audio: false,
+        });
+        if (request !== cameraRequest.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
       }
-      if (request !== cameraRequest.current) return;
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraError(t("cameraUnsupported"));
-        return;
+    } catch (error) {
+      console.error("[product-camera] preview failed", error);
+      if (request === cameraRequest.current) {
+        setCameraError(lang === "rw"
+          ? "Kamera ntiyafungutse. Reba ko wemereye Stoke Yange gukoresha kamera muri Settings > Apps > Stoke Yange > Permissions > Camera, hanyuma ukande Ongera ugerageze."
+          : "The camera preview could not start. Allow camera access in Settings > Apps > Stoke Yange > Permissions > Camera, then try again.");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } },
-        audio: false,
-      });
-      if (request !== cameraRequest.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-    } catch {
-      if (request === cameraRequest.current) setCameraError(t("cameraDenied"));
     } finally {
       if (request === cameraRequest.current) setCameraBusy(false);
     }
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        if (!nativePreviewStarted.current) throw new Error("Camera preview is not running");
+        const result = await CameraPreview.capture({ quality: 82, width: 900, height: 900 });
+        const raw = result.value;
+        if (!raw) throw new Error("Camera returned an empty image");
+        const dataUrl = raw.startsWith("data:") ? raw : `data:image/jpeg;base64,${raw}`;
+        setF((prev) => ({ ...prev, image: dataUrl }));
+        stopCamera();
+      } catch (error) {
+        console.error("[product-camera] capture failed", error);
+        setCameraError(lang === "rw" ? "Ifoto ntiyafashwe. Ongera ugerageze." : "Could not capture the photo. Please try again.");
+      }
+      return;
+    }
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) {
       setCameraError(t("cameraStarting"));
@@ -264,7 +306,6 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
       return;
     }
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    // Keep the compressed photo as a data URL in the product record (IndexedDB/app storage), not in the public photo gallery. The photo is persisted only when Save is pressed.
     setF((prev) => ({ ...prev, image: canvas.toDataURL("image/webp", 0.82) }));
     stopCamera();
   };
@@ -353,7 +394,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
                 <Button type="button" disabled={cameraBusy} onClick={() => void openCamera()} className="h-10 w-full rounded-full">{t("retryCamera")}</Button>
               </div>
             ) : (
-              <video ref={videoRef} autoPlay playsInline muted className="max-h-72 w-full rounded-xl bg-black object-contain" />
+              {Capacitor.isNativePlatform() ? <div ref={nativePreviewRef} className="h-72 w-full rounded-xl bg-black" aria-label={lang === "rw" ? "Ishusho ya kamera" : "Camera preview"} /> : <video ref={videoRef} autoPlay playsInline muted className="h-72 w-full rounded-xl bg-black object-contain" />}
             )}
             <div className="flex gap-2">
               {!cameraError && <Button type="button" disabled={cameraBusy} onClick={capturePhoto} className="h-11 flex-1 rounded-full">{t("capturePhoto")}</Button>}
