@@ -22,6 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(true);
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState(false);
+  const [startupProgress, setStartupProgress] = useState(8);
   const [authed, setAuthed] = useState(false);
   const shop = useShopName();
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
@@ -61,6 +62,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     setStartupError(false);
+    setStartupProgress(8);
     // The system launch splash cannot be removed on Android 12+, but do not
     // hold a second native splash over the original PWA loading screen.
     if (isNative) void SplashScreen.hide().catch(() => {});
@@ -72,6 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (cancelled) return;
       window.clearTimeout(startupTimeout);
       setStartupError(false);
+      setStartupProgress(100);
       setReady(true);
     };
 
@@ -82,7 +85,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         // Seed first, then read the small local state in parallel. Cloud sync is never
         // awaited during launch, so a weak connection cannot delay opening the shop.
         await ensureSeeded();
+        if (cancelled) return;
+        setStartupProgress(38);
         const loggedIn = await isLoggedIn();
+        if (cancelled) return;
+        setStartupProgress(76);
         if (cancelled) return;
         setAuthed(loggedIn);
         if (navigator.onLine) {
@@ -125,14 +132,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
         <BrandLogo className="mb-5 size-16 rounded-none" imgClassName="rounded-none object-contain" />
         <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
-        <div className="mt-4 flex items-center justify-center gap-2" role="status" aria-label={lang === "rw" ? "App irafunguka" : "App is loading"}>
-          <span className="sy-loading-dot" />
-          <span className="sy-loading-dot" />
-          <span className="sy-loading-dot" />
-          <span className="sy-loading-dot" />
-        </div>
-        <div className="mt-3 h-1 w-36 overflow-hidden rounded-full bg-primary/10">
-          <div className="h-full w-2/5 animate-pulse rounded-full bg-primary" />
+        <div className="mt-5 w-48" role="status" aria-live="polite" aria-label={lang === "rw" ? "App irafunguka" : "App is loading"}>
+          <div className="mb-2 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>{lang === "rw" ? "Gufungura app…" : "Opening app…"}</span>
+            <span className="tabular-nums">{startupProgress}%</span>
+          </div>
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full bg-primary/10"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={startupProgress}
+          >
+            <div className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out" style={{ width: `${startupProgress}%` }} />
+          </div>
         </div>
         {startupError && (
           <div className="mt-4 max-w-xs text-center" role="alert">
