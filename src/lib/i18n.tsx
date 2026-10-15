@@ -168,13 +168,13 @@ export function reminderText(lang: Lang, name: string, amount: string, shop: str
 }
 
 const Ctx = createContext<{ lang: Lang; setLang: (l: Lang) => void; t: (k: Key) => string }>({
-  lang: "en",
+  lang: "rw",
   setLang: () => {},
   t: (k) => dict[k][0],
 });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("en");
+  const [lang, setLangState] = useState<Lang>("rw");
   useEffect(() => {
     const s = localStorage.getItem("sy-lang");
     if (s === "rw" || s === "en") setLangState(s);
