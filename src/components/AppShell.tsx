@@ -22,7 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(true);
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState(false);
-  const [startupProgress, setStartupProgress] = useState(8);
+  const [startupProgress, setStartupProgress] = useState(0);
   const [authed, setAuthed] = useState(false);
   const shop = useShopName();
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
@@ -63,7 +63,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     setStartupError(false);
-    setStartupProgress(8);
+    setStartupProgress(0);
+    // Advance visibly while real local initialization is running.
+    let progress = 0;
+    const progressTicker = window.setInterval(() => {
+      progress = Math.min(90, progress + Math.max(1, Math.round((90 - progress) * 0.08)));
+      if (!cancelled) setStartupProgress(progress);
+    }, 180);
     // The system launch splash cannot be removed on Android 12+, but do not
     // hold a second native splash over the original PWA loading screen.
     if (isNative) void SplashScreen.hide().catch(() => {});
@@ -74,6 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     const finishStartup = () => {
       if (cancelled) return;
       window.clearTimeout(startupTimeout);
+      window.clearInterval(progressTicker);
       setStartupError(false);
       setStartupProgress(100);
       setReady(true);
@@ -112,6 +119,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       window.clearTimeout(startupTimeout);
+      window.clearInterval(progressTicker);
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
     };
@@ -135,11 +143,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
         <div className="mt-5 w-48" role="status" aria-live="polite" aria-label={lang === "rw" ? "App irafunguka" : "App is loading"}>
           <div className="mb-2 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>{lang === "rw" ? "Gufungura app…" : "Opening app…"}</span>
-            <span className="tabular-nums">{startupProgress}%</span>
+            <span>{lang === "rw" ? "Turimo gutegura app yawe…" : "Getting your app ready…"}</span>
           </div>
           <div
-            className="h-1.5 w-full overflow-hidden rounded-full bg-primary/10"
+            className="h-2.5 w-full overflow-hidden rounded-full bg-primary/10"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
