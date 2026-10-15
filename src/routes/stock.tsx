@@ -14,7 +14,7 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { cn } from "@/lib/utils";
 import { unitLabel } from "@/lib/i18n";
 import { Capacitor } from "@capacitor/core";
-import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Camera } from "@capacitor/camera";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/stock")({
@@ -212,31 +212,15 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
     setCameraOpen(true);
     try {
       if (Capacitor.isNativePlatform()) {
+        // Request Android's runtime permission first, then keep the camera preview
+        // inline in this form using the same getUserMedia/video/canvas flow as the PWA.
         const permission = await Camera.requestPermissions({ permissions: ["camera"] });
         if (permission.camera !== "granted") {
           setCameraError(lang === "rw"
-            ? "Emera Stoke Yange gukoresha kamera muri Settings za telefone yawe, hanyuma wongere ugerageze."
-            : "Please allow Stoke Yange to use the camera in your phone Settings, then try again.");
+            ? "Kamera ntiyemerewe. Kanda Allow igihe ubajijwe, cyangwa ujye muri Settings > Apps > Stoke Yange > Permissions > Camera uyemere, hanyuma wongere ugerageze."
+            : "Camera permission is not granted. Tap Allow when prompted, or open Settings > Apps > Stoke Yange > Permissions > Camera, allow it, then try again.");
           return;
         }
-        if (request !== cameraRequest.current) return;
-        // Native WebViews do not consistently grant getUserMedia access even after
-        // the Android camera permission is granted. Use the native camera plugin.
-        const photo = await Camera.getPhoto({
-          quality: 82,
-          width: 900,
-          height: 900,
-          allowEditing: false,
-          resultType: CameraResultType.DataUrl,
-          source: CameraSource.Camera,
-          promptLabelHeader: lang === "rw" ? "Fata ifoto y'igicuruzwa" : "Take product photo",
-          promptLabelCancel: lang === "rw" ? "Reka" : "Cancel",
-          promptLabelPhoto: lang === "rw" ? "Hitamo ifoto" : "Choose photo",
-        });
-        if (request !== cameraRequest.current) return;
-        if (photo.dataUrl) setF((prev) => ({ ...prev, image: photo.dataUrl! }));
-        setCameraOpen(false);
-        return;
       }
       if (request !== cameraRequest.current) return;
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -280,7 +264,7 @@ function ProductForm({ p, cats, onDone }: { p?: Product | undefined; cats: strin
       return;
     }
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    // The photo joins the product record only when Save is pressed.
+    // Keep the compressed photo as a data URL in the product record (IndexedDB/app storage), not in the public photo gallery. The photo is persisted only when Save is pressed.
     setF((prev) => ({ ...prev, image: canvas.toDataURL("image/webp", 0.82) }));
     stopCamera();
   };
