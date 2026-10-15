@@ -19,18 +19,26 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/welcome")({
   head: () => ({
     meta: [
-      { title: "Stoke Yange — Your shop, on your phone" },
+      { title: "Stoke Yange | Gucunga ububiko n'igurisha mu Rwanda" },
       {
         name: "description",
         content:
-          "Built for small shops and big ones. Works both online and offline. Free to install.",
+          "Stoke Yange ni application y'ubuntu ifasha amaduka yo mu Rwanda gucunga ububiko, kwandika igurisha no gukurikirana amadeni. Ikora no mu gihe nta murandasi.",
       },
-      { property: "og:title", content: "Stoke Yange — Your shop, on your phone" },
+      { name: "robots", content: "index, follow, max-image-preview:large" },
+      { name: "googlebot", content: "index, follow, max-image-preview:large" },
+      { property: "og:title", content: "Stoke Yange | Gucunga ububiko n'igurisha mu Rwanda" },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
+      { property: "og:locale", content: "rw_RW" },
+      { property: "og:url", content: "https://stoke-yange.vercel.app/welcome" },
+      { property: "og:image", content: "https://stoke-yange.vercel.app/icon-512.png" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Stoke Yange | Gucunga ububiko n'igurisha mu Rwanda" },
+      { name: "twitter:description", content: "Application y'ubuntu yo gucunga ububiko, igurisha n'amadeni. Ikora nta murandasi." },
+      { name: "twitter:image", content: "https://stoke-yange.vercel.app/icon-512.png" },
       {
         property: "og:description",
-        content: "Built for small shops and big ones. Works both online and offline.",
+        content: "Gucunga ububiko, kwandika igurisha no gukurikirana amadeni. Ikora nta murandasi.",
       },
     ],
   }),
