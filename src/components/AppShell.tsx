@@ -33,7 +33,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
-  // Public website pages must never initialize the app shell or show auth.
   const isLanding = path === "/welcome" || path.startsWith("/welcome/") || path === "/install-android" || path.startsWith("/install-android/");
   const isNative = Capacitor.isNativePlatform();
 
@@ -64,14 +63,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     let cancelled = false;
     setStartupError(false);
     setStartupProgress(0);
-    // Advance visibly while real local initialization is running.
     let progress = 0;
     const progressTicker = window.setInterval(() => {
       progress = Math.min(90, progress + Math.max(1, Math.round((90 - progress) * 0.08)));
       if (!cancelled) setStartupProgress(progress);
     }, 180);
-    // The system launch splash cannot be removed on Android 12+, but do not
-    // hold a second native splash over the original PWA loading screen.
     if (isNative) void SplashScreen.hide().catch(() => {});
     const startupTimeout = window.setTimeout(() => {
       if (!cancelled) setStartupError(true);
@@ -90,8 +86,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       finishStartup();
     } else {
       (async () => {
-        // Seed first, then read the small local state in parallel. Cloud sync is never
-        // awaited during launch, so a weak connection cannot delay opening the shop.
         await ensureSeeded();
         if (cancelled) return;
         setStartupProgress(38);
@@ -182,9 +176,20 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>EN</span>
               <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>RW</span>
             </button>
-            <Link to="/stock" search={{ low: true }} className="relative grid size-9 place-items-center rounded-full border bg-card" aria-label="Low stock">
+            <Link
+              to="/notifications"
+              className={cn(
+                "relative grid size-9 place-items-center rounded-full border bg-card",
+                path.startsWith("/notifications") && "border-primary text-primary",
+              )}
+              aria-label={lang === "rw" ? "Ubutumwa" : "Notifications"}
+            >
               <Bell className="size-4" />
-              {lowCount > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{lowCount}</span>}
+              {lowCount > 0 && (
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                  {lowCount}
+                </span>
+              )}
             </Link>
             <Link to="/settings" className="grid size-9 place-items-center rounded-full border bg-card" aria-label={t("settings")}>
               <Settings className="size-4" />
