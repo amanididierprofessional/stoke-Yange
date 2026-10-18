@@ -171,6 +171,7 @@ function CreditPage() {
         <DrawerContent className="mx-auto max-w-md">
           {payFor && (
             <PayForm
+              key={payFor.id}
               party={payFor}
               max={data.find((r) => r.p.id === payFor.id)?.balance ?? 0}
               onDone={() => setPayFor(null)}
@@ -189,16 +190,17 @@ function CreditPage() {
 
 function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: () => void }) {
   const { t } = useI18n();
-  const [amt, setAmt] = useState("");
+  const balance = Math.max(0, Math.round(Number(max) || 0));
+  const [amt, setAmt] = useState(() => String(balance));
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
   // Reset amount when opening for a different balance
   useEffect(() => {
-    setAmt(String(Math.max(0, Math.round(max))));
-  }, [max, party.id]);
+    setAmt(String(balance));
+  }, [balance, party.id]);
 
-  const setPercent = (pct: number) => {
-    const value = Math.max(0, Math.round((Number(max) || 0) * (pct / 100)));
+  const applyPercent = (pct: number) => {
+    const value = Math.max(0, Math.round(balance * (pct / 100)));
     setAmt(String(value));
   };
 
@@ -216,6 +218,8 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
     onDone();
   };
 
+  const currentNum = Number(amt) || 0;
+
   return (
     <div>
       <DrawerHeader>
@@ -225,7 +229,7 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
       </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
         <p className="text-sm text-muted-foreground">
-          {t("balance")}: <b className="text-foreground">{fmt(max)}</b>
+          {t("balance")}: <b className="text-foreground">{fmt(balance)}</b>
         </p>
         <Input
           inputMode="numeric"
@@ -233,26 +237,35 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
           onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
           className="h-12 rounded-xl text-lg font-semibold"
         />
-        <div className="flex gap-2">
-          {([20, 50, 100] as const).map((pct) => (
-            <button
-              key={pct}
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setPercent(pct);
-              }}
-              className={cn(
-                "h-10 flex-1 rounded-full border text-sm font-semibold transition-colors",
-                Number(amt) === Math.round((max || 0) * (pct / 100))
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "bg-card active:bg-muted",
-              )}
-            >
-              {pct}%
-            </button>
-          ))}
+        <div className="flex gap-2" role="group" aria-label="Quick percent">
+          {([20, 50, 100] as const).map((pct) => {
+            const target = Math.round(balance * (pct / 100));
+            const active = currentNum === target && target > 0;
+            return (
+              <button
+                key={pct}
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  applyPercent(pct);
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  applyPercent(pct);
+                }}
+                className={cn(
+                  "h-11 flex-1 rounded-full border text-sm font-semibold transition-colors touch-manipulation",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "bg-card active:bg-muted",
+                )}
+              >
+                {pct}%
+              </button>
+            );
+          })}
         </div>
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
         <button type="button" onClick={save} className="w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">

@@ -15,6 +15,8 @@ import { Route as HistoryRouteImport } from './routes/history'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StockRouteImport } from './routes/stock'
 import { Route as WelcomeRouteImport } from './routes/welcome'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as InstallAndroidRouteImport } from './routes/install-android'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +48,16 @@ const WelcomeRoute = WelcomeRouteImport.update({
   path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstallAndroidRoute = InstallAndroidRouteImport.update({
+  id: '/install-android',
+  path: '/install-android',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +66,8 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/stock': typeof StockRoute
   '/welcome': typeof WelcomeRoute
+  '/notifications': typeof NotificationsRoute
+  '/install-android': typeof InstallAndroidRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +76,8 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/stock': typeof StockRoute
   '/welcome': typeof WelcomeRoute
+  '/notifications': typeof NotificationsRoute
+  '/install-android': typeof InstallAndroidRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,12 +87,30 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/stock': typeof StockRoute
   '/welcome': typeof WelcomeRoute
+  '/notifications': typeof NotificationsRoute
+  '/install-android': typeof InstallAndroidRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/credit' | '/history' | '/settings' | '/stock' | '/welcome'
+  fullPaths:
+    | '/'
+    | '/credit'
+    | '/history'
+    | '/settings'
+    | '/stock'
+    | '/welcome'
+    | '/notifications'
+    | '/install-android'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/credit' | '/history' | '/settings' | '/stock' | '/welcome'
+  to:
+    | '/'
+    | '/credit'
+    | '/history'
+    | '/settings'
+    | '/stock'
+    | '/welcome'
+    | '/notifications'
+    | '/install-android'
   id:
     | '__root__'
     | '/'
@@ -85,6 +119,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/stock'
     | '/welcome'
+    | '/notifications'
+    | '/install-android'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -94,6 +130,8 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   StockRoute: typeof StockRoute
   WelcomeRoute: typeof WelcomeRoute
+  NotificationsRoute: typeof NotificationsRoute
+  InstallAndroidRoute: typeof InstallAndroidRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -140,6 +178,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/install-android': {
+      id: '/install-android'
+      path: '/install-android'
+      fullPath: '/install-android'
+      preLoaderRoute: typeof InstallAndroidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -150,6 +202,8 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   StockRoute: StockRoute,
   WelcomeRoute: WelcomeRoute,
+  NotificationsRoute: NotificationsRoute,
+  InstallAndroidRoute: InstallAndroidRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
