@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, MessageCircle, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
@@ -36,22 +36,23 @@ function CreditPage() {
   const [payFor, setPayFor] = useState<Party | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const data = useLiveQuery(async () => {
-    const parties = await db.parties.where("kind").equals(kind).toArray();
-    const debts = await db.debts.toArray();
-    const pays = await db.payments.toArray();
-    return parties
-      .map((p) => {
-        const d = debts.filter((x) => x.partyId === p.id).sort((a, b) => a.createdAt - b.createdAt);
-        const py = pays.filter((x) => x.partyId === p.id).sort((a, b) => b.createdAt - a.createdAt);
-        const balance = d.reduce((a, x) => a + x.amount, 0) - py.reduce((a, x) => a + x.amount, 0);
-        const oldest = d[0];
-        const overdue = !!oldest && balance > 0 && Date.now() - oldest.createdAt > (oldest.dueDays ?? 7) * DAY;
-        return { p, debts: d, pays: py, balance, oldest: oldest?.createdAt ?? p.createdAt, overdue };
-      })
-      .filter((r) => r.balance > 0 || r.debts.length === 0)
-      .sort((a, b) => a.oldest - b.oldest);
-  }, [kind]) ?? [];
+  const data =
+    useLiveQuery(async () => {
+      const parties = await db.parties.where("kind").equals(kind).toArray();
+      const debts = await db.debts.toArray();
+      const pays = await db.payments.toArray();
+      return parties
+        .map((p) => {
+          const d = debts.filter((x) => x.partyId === p.id).sort((a, b) => a.createdAt - b.createdAt);
+          const py = pays.filter((x) => x.partyId === p.id).sort((a, b) => b.createdAt - a.createdAt);
+          const balance = d.reduce((a, x) => a + x.amount, 0) - py.reduce((a, x) => a + x.amount, 0);
+          const oldest = d[0];
+          const overdue = !!oldest && balance > 0 && Date.now() - oldest.createdAt > (oldest.dueDays ?? 7) * DAY;
+          return { p, debts: d, pays: py, balance, oldest: oldest?.createdAt ?? p.createdAt, overdue };
+        })
+        .filter((r) => r.balance > 0 || r.debts.length === 0)
+        .sort((a, b) => a.oldest - b.oldest);
+    }, [kind]) ?? [];
 
   const total = data.reduce((a, r) => a + r.balance, 0);
 
@@ -66,7 +67,15 @@ function CreditPage() {
       <h2 className="text-2xl font-bold">{t("credit")}</h2>
       <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
         {(["customer", "supplier"] as const).map((k) => (
-          <button key={k} onClick={() => setKind(k)} className={cn("h-11 rounded-full px-2 text-xs font-semibold leading-tight", kind === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            className={cn(
+              "h-11 rounded-full px-2 text-xs font-semibold leading-tight",
+              kind === k ? "bg-card text-primary shadow-card" : "text-muted-foreground",
+            )}
+          >
             {k === "customer" ? t("owesMe") : t("iOwe")}
           </button>
         ))}
@@ -76,7 +85,11 @@ function CreditPage() {
           <p className="text-xs opacity-70">{t("total")}</p>
           <p className="text-2xl font-bold tabular-nums">{fmt(total)}</p>
         </div>
-        <button onClick={() => setAdding(true)} className="flex h-10 items-center gap-1 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="flex h-10 items-center gap-1 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground"
+        >
           <Plus className="size-4" /> {t("addParty")}
         </button>
       </div>
@@ -86,13 +99,15 @@ function CreditPage() {
           const open = openId === r.p.id;
           return (
             <li key={r.p.id} className="rounded-2xl bg-card p-3 shadow-card">
-              <button className="flex w-full items-center gap-3 text-left" onClick={() => setOpenId(open ? null : r.p.id!)}>
+              <button type="button" className="flex w-full items-center gap-3 text-left" onClick={() => setOpenId(open ? null : r.p.id!)}>
                 <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent font-bold text-accent-foreground">{r.p.name[0]}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold">{r.p.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {r.p.phone} · {Math.floor((Date.now() - r.oldest) / DAY)} {t("days")}
-                    {r.overdue && <span className="ml-1 rounded-full bg-destructive/10 px-2 font-semibold text-destructive">{t("overdue")}</span>}
+                    {r.overdue && (
+                      <span className="ml-1 rounded-full bg-destructive/10 px-2 font-semibold text-destructive">{t("overdue")}</span>
+                    )}
                   </p>
                 </div>
                 <span className="font-bold tabular-nums text-primary">{fmt(r.balance)}</span>
@@ -103,7 +118,12 @@ function CreditPage() {
                   <ul className="space-y-1 text-sm">
                     {r.debts.map((d) => (
                       <li key={d.id} className="flex justify-between gap-2">
-                        <span><span className="block">{d.description}</span><span className="text-xs text-muted-foreground">{when(d.createdAt)} · {d.dueDays ?? 7} {t("days")}</span></span>
+                        <span>
+                          <span className="block">{d.description}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {when(d.createdAt)} · {d.dueDays ?? 7} {t("days")}
+                          </span>
+                        </span>
                         <span className="tabular-nums">{fmt(d.amount)}</span>
                       </li>
                     ))}
@@ -112,16 +132,29 @@ function CreditPage() {
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground">{t("payments")}</p>
                       {r.pays.map((x) => (
-                        <p key={x.id} className="flex justify-between text-sm text-success"><span>{when(x.createdAt)}</span><span>−{fmt(x.amount)}</span></p>
+                        <p key={x.id} className="flex justify-between text-sm text-success">
+                          <span>{when(x.createdAt)}</span>
+                          <span>−{fmt(x.amount)}</span>
+                        </p>
                       ))}
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <button onClick={() => setPayFor(r.p)} className="h-11 flex-1 rounded-full bg-primary text-sm font-semibold text-primary-foreground">{t("recordPayment")}</button>
+                    <button
+                      type="button"
+                      onClick={() => setPayFor(r.p)}
+                      className="h-11 flex-1 rounded-full bg-primary text-sm font-semibold text-primary-foreground"
+                    >
+                      {t("recordPayment")}
+                    </button>
                     {kind === "customer" && r.p.phone && (
                       <>
-                        <button onClick={() => remind(r, "wa")} aria-label="WhatsApp" className="grid size-11 place-items-center rounded-full bg-success text-success-foreground"><MessageCircle className="size-5" /></button>
-                        <button onClick={() => remind(r, "sms")} aria-label="SMS" className="grid size-11 place-items-center rounded-full border"><MessageSquare className="size-5" /></button>
+                        <button type="button" onClick={() => remind(r, "wa")} aria-label="WhatsApp" className="grid size-11 place-items-center rounded-full bg-success text-success-foreground">
+                          <MessageCircle className="size-5" />
+                        </button>
+                        <button type="button" onClick={() => remind(r, "sms")} aria-label="SMS" className="grid size-11 place-items-center rounded-full border">
+                          <MessageSquare className="size-5" />
+                        </button>
                       </>
                     )}
                   </div>
@@ -135,10 +168,20 @@ function CreditPage() {
       </ul>
 
       <Drawer open={!!payFor} onOpenChange={(o) => !o && setPayFor(null)}>
-        <DrawerContent className="mx-auto max-w-md">{payFor && <PayForm party={payFor} max={data.find((r) => r.p.id === payFor.id)?.balance ?? 0} onDone={() => setPayFor(null)} />}</DrawerContent>
+        <DrawerContent className="mx-auto max-w-md">
+          {payFor && (
+            <PayForm
+              party={payFor}
+              max={data.find((r) => r.p.id === payFor.id)?.balance ?? 0}
+              onDone={() => setPayFor(null)}
+            />
+          )}
+        </DrawerContent>
       </Drawer>
       <Drawer open={adding} onOpenChange={setAdding}>
-        <DrawerContent className="mx-auto max-w-md"><AddPartyForm kind={kind} onDone={() => setAdding(false)} /></DrawerContent>
+        <DrawerContent className="mx-auto max-w-md">
+          <AddPartyForm kind={kind} onDone={() => setAdding(false)} />
+        </DrawerContent>
       </Drawer>
     </div>
   );
@@ -146,31 +189,75 @@ function CreditPage() {
 
 function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: () => void }) {
   const { t } = useI18n();
-  const [amt, setAmt] = useState(String(max));
+  const [amt, setAmt] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+
+  // Reset amount when opening for a different balance
+  useEffect(() => {
+    setAmt(String(Math.max(0, Math.round(max))));
+  }, [max, party.id]);
+
+  const setPercent = (pct: number) => {
+    const value = Math.max(0, Math.round((Number(max) || 0) * (pct / 100)));
+    setAmt(String(value));
+  };
+
   const save = async () => {
     const n = Number(amt) || 0;
-    if (n <= 0) { toast.error(t("amount")); return; }
+    if (n <= 0) {
+      toast.error(t("amount"));
+      return;
+    }
     const d = new Date(date);
     const now = new Date();
-    d.setHours(now.getHours(), now.getMinutes());
+    d.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
     await recordPayment(party.id!, n, d.getTime());
     toast.success(`${t("recordPayment")}: ${fmt(n)}`);
     onDone();
   };
+
   return (
     <div>
-      <DrawerHeader><DrawerTitle>{t("recordPayment")} — {party.name}</DrawerTitle></DrawerHeader>
+      <DrawerHeader>
+        <DrawerTitle>
+          {t("recordPayment")} — {party.name}
+        </DrawerTitle>
+      </DrawerHeader>
       <div className="space-y-3 px-4 pb-6">
-        <p className="text-sm text-muted-foreground">{t("balance")}: <b className="text-foreground">{fmt(max)}</b></p>
-        <Input inputMode="numeric" value={amt} onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))} className="h-12 rounded-xl text-lg font-semibold" />
+        <p className="text-sm text-muted-foreground">
+          {t("balance")}: <b className="text-foreground">{fmt(max)}</b>
+        </p>
+        <Input
+          inputMode="numeric"
+          value={amt}
+          onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
+          className="h-12 rounded-xl text-lg font-semibold"
+        />
         <div className="flex gap-2">
-          {[0.25, 0.5, 1].map((f) => (
-            <button key={f} onClick={() => setAmt(String(Math.round(max * f)))} className="h-9 flex-1 rounded-full border text-sm">{f * 100}%</button>
+          {([20, 50, 100] as const).map((pct) => (
+            <button
+              key={pct}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPercent(pct);
+              }}
+              className={cn(
+                "h-10 flex-1 rounded-full border text-sm font-semibold transition-colors",
+                Number(amt) === Math.round((max || 0) * (pct / 100))
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-card active:bg-muted",
+              )}
+            >
+              {pct}%
+            </button>
           ))}
         </div>
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
-        <button onClick={save} className="w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
+        <button type="button" onClick={save} className="w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
+          {t("save")}
+        </button>
       </div>
     </div>
   );
@@ -183,20 +270,33 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
   const [desc, setDesc] = useState("");
   const [amt, setAmt] = useState("");
   const save = async () => {
-    if (!name.trim()) { toast.error(t("name")); return; }
+    if (!name.trim()) {
+      toast.error(t("name"));
+      return;
+    }
     const id = await addParty(name, phone, kind);
     if (Number(amt) > 0) await addDebt(id, desc || "—", Number(amt));
     onDone();
   };
   return (
     <div>
-      <DrawerHeader><DrawerTitle>{kind === "customer" ? t("customer") : t("supplier")}</DrawerTitle></DrawerHeader>
+      <DrawerHeader>
+        <DrawerTitle>{kind === "customer" ? t("customer") : t("supplier")}</DrawerTitle>
+      </DrawerHeader>
       <div className="space-y-2 px-4 pb-6">
         <Input placeholder={t("name")} value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
         <Input placeholder={t("phone")} inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl" />
         <Input placeholder={t("description")} value={desc} onChange={(e) => setDesc(e.target.value)} className="h-11 rounded-xl" />
-        <Input placeholder={`${t("amount")} (RWF)`} inputMode="numeric" value={amt} onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))} className="h-11 rounded-xl" />
-        <button onClick={save} className="mt-2 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">{t("save")}</button>
+        <Input
+          placeholder={`${t("amount")} (RWF)`}
+          inputMode="numeric"
+          value={amt}
+          onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
+          className="h-11 rounded-xl"
+        />
+        <button type="button" onClick={save} className="mt-2 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
+          {t("save")}
+        </button>
       </div>
     </div>
   );
@@ -209,9 +309,22 @@ function AddDebtInline({ partyId }: { partyId: number }) {
   return (
     <div className="flex gap-2">
       <Input placeholder={t("description")} value={desc} onChange={(e) => setDesc(e.target.value)} className="h-10 rounded-xl" />
-      <Input placeholder="RWF" inputMode="numeric" value={amt} onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))} className="h-10 w-24 rounded-xl" />
+      <Input
+        placeholder="RWF"
+        inputMode="numeric"
+        value={amt}
+        onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
+        className="h-10 w-24 rounded-xl"
+      />
       <button
-        onClick={async () => { if (Number(amt) > 0) { await addDebt(partyId, desc || "—", Number(amt)); setDesc(""); setAmt(""); } }}
+        type="button"
+        onClick={async () => {
+          if (Number(amt) > 0) {
+            await addDebt(partyId, desc || "—", Number(amt));
+            setDesc("");
+            setAmt("");
+          }
+        }}
         className="h-10 shrink-0 rounded-full border px-3 text-xs font-semibold"
       >
         {t("addDebtLbl")}
