@@ -14,7 +14,7 @@ import {
   wipeCloudData,
   type Account,
 } from "@/lib/auth";
-import { exportPdfReport } from "@/lib/report";
+import { exportPdfReport, exportSalesCsv } from "@/lib/report";
 import { pauseSync, trySync } from "@/lib/sync";
 
 export const Route = createFileRoute("/settings")({
@@ -62,11 +62,12 @@ function SettingsPage() {
       if (result.ok) {
         toast.success("Amakuru yabitswe kuri cloud.");
       } else {
-        const message = result.reason === "offline"
-          ? "Nta internet ihari. Ongera ugerageze umaze kuyibona."
-          : result.reason === "no_session"
-            ? "Banza winjire muri konti yawe kugira ngo ubike amakuru."
-            : `Kubika amakuru ntibyagenze neza: ${result.reason ?? "gerageza nanone"}`;
+        const message =
+          result.reason === "offline"
+            ? "Nta internet ihari. Ongera ugerageze umaze kuyibona."
+            : result.reason === "no_session"
+              ? "Banza winjire muri konti yawe kugira ngo ubike amakuru."
+              : `Kubika amakuru ntibyagenze neza: ${result.reason ?? "gerageza nanone"}`;
         toast.error(message);
       }
     } catch (e) {
@@ -75,8 +76,6 @@ function SettingsPage() {
       setSyncing(false);
     }
   };
-
-  const stamp = new Date().toISOString().slice(0, 10);
 
   const saveShopName = async () => {
     const v = name.trim() || shop;
@@ -87,17 +86,12 @@ function SettingsPage() {
   };
 
   const exportCsv = async () => {
-    const rows = await db.sales.orderBy("createdAt").toArray();
-    const head = "date,product,qty,unit_price,total,type,reversed";
-    const body = rows.map((s) =>
-      [new Date(s.createdAt).toISOString(), `"${s.productName}"`, s.qty, s.unitPrice, s.total, s.type, s.reversed ? 1 : 0].join(","),
-    );
-    const url = URL.createObjectURL(new Blob([[head, ...body].join("\n")], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stoke-yange-sales-${stamp}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      await exportSalesCsv();
+      toast.success(t("exportCsv"));
+    } catch (e) {
+      toast.error(String(e));
+    }
   };
 
   const logout = async () => {
@@ -117,12 +111,18 @@ function SettingsPage() {
     try {
       resumeSync = await pauseSync();
       await signOutLocal();
-      toast.success(lang === "rw"
-        ? "Amakuru yo kuri iyi telefone yasibwe. Ayari kuri cloud arasigaye."
-        : "This phone's app data was cleared. Cloud data was kept.");
+      toast.success(
+        lang === "rw"
+          ? "Amakuru yo kuri iyi telefone yasibwe. Ayari kuri cloud arasigaye."
+          : "This phone's app data was cleared. Cloud data was kept.",
+      );
       window.location.reload();
     } catch (error) {
-      toast.error(lang === "rw" ? "Gusiba amakuru kuri telefone ntibyagenze neza." : "Could not clear this phone's data: " + String(error));
+      toast.error(
+        lang === "rw"
+          ? "Gusiba amakuru kuri telefone ntibyagenze neza."
+          : "Could not clear this phone's data: " + String(error),
+      );
     } finally {
       resumeSync?.();
       setBusy(false);
@@ -134,22 +134,31 @@ function SettingsPage() {
     setBusy(true);
     let resumeSync: (() => void) | undefined;
     try {
-      // Prevent a background sync from re-uploading old rows while cloud data is being deleted.
       resumeSync = await pauseSync();
       const cloud = await wipeCloudData();
       if (!cloud.ok) {
-        toast.error(lang === "rw"
-          ? "Cloud ntiyasibwe; nta makuru yasibwe kuri telefone. Ongera ugerageze ufite internet: " + (cloud.reason || "ikosa ritazwi")
-          : "Cloud reset failed. Nothing was cleared on this phone; reconnect and retry. " + (cloud.reason || "Unknown error"));
+        toast.error(
+          lang === "rw"
+            ? "Cloud ntiyasibwe; nta makuru yasibwe kuri telefone. Ongera ugerageze ufite internet: " +
+                (cloud.reason || "ikosa ritazwi")
+            : "Cloud reset failed. Nothing was cleared on this phone; reconnect and retry. " +
+                (cloud.reason || "Unknown error"),
+        );
         return;
       }
       await signOutLocal();
-      toast.success(lang === "rw"
-        ? "Amakuru yasibwe kuri telefone no kuri cloud."
-        : "Data was cleared from this phone and the cloud.");
+      toast.success(
+        lang === "rw"
+          ? "Amakuru yasibwe kuri telefone no kuri cloud."
+          : "Data was cleared from this phone and the cloud.",
+      );
       window.location.reload();
     } catch (error) {
-      toast.error(lang === "rw" ? "Gusiba amakuru ntibyagenze neza." : "Could not finish clearing data: " + String(error));
+      toast.error(
+        lang === "rw"
+          ? "Gusiba amakuru ntibyagenze neza."
+          : "Could not finish clearing data: " + String(error),
+      );
     } finally {
       resumeSync?.();
       setBusy(false);
@@ -165,15 +174,23 @@ function SettingsPage() {
         <section className="flex min-h-36 items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-card p-5 shadow-card">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center gap-2">
-              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Cloud className="size-5" /></span>
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                <Cloud className="size-5" />
+              </span>
               <h3 className="text-base font-bold">Cloud Sync</h3>
             </div>
-            <p className="text-sm leading-relaxed text-muted-foreground">Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.
+            </p>
             <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-success">
               <span className="size-2 rounded-full bg-success" />
               Kwibika mu gihe ufite internet birakora
             </p>
-            {pendingSync > 0 && <p className="mt-1 text-[11px] text-muted-foreground">{pendingSync} bitaroherezwa; bizageragezwa internet igarutse.</p>}
+            {pendingSync > 0 && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {pendingSync} bitaroherezwa; bizageragezwa internet igarutse.
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -190,10 +207,14 @@ function SettingsPage() {
         <section className="flex min-h-36 items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-card p-5 shadow-card">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center gap-2">
-              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Cloud className="size-5" /></span>
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                <Cloud className="size-5" />
+              </span>
               <h3 className="text-base font-bold">Cloud Sync</h3>
             </div>
-            <p className="text-sm leading-relaxed text-muted-foreground">Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.
+            </p>
             <p className="mt-2 text-[11px] font-medium text-muted-foreground">
               Kuyishyiriraho{pendingSync > 0 ? ` · ${pendingSync} bitaroherezwa` : ""}
             </p>
@@ -228,7 +249,11 @@ function SettingsPage() {
                 className="h-10 flex-1 rounded-xl"
                 onKeyDown={(e) => e.key === "Enter" && saveShopName()}
               />
-              <button type="button" onClick={saveShopName} className="h-10 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
+              <button
+                type="button"
+                onClick={saveShopName}
+                className="h-10 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground"
+              >
                 {t("save")}
               </button>
             </>
@@ -298,33 +323,55 @@ function SettingsPage() {
       </section>
 
       <section className="space-y-2 rounded-2xl bg-card p-4 shadow-card">
-        <button type="button" disabled={busy} onClick={logout} className="h-12 w-full rounded-full bg-secondary font-semibold text-secondary-foreground">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={logout}
+          className="h-12 w-full rounded-full bg-secondary font-semibold text-secondary-foreground"
+        >
           {t("logout")}
         </button>
-        <button type="button" disabled={busy} onClick={() => setResetOpen(true)} className="h-12 w-full rounded-full bg-destructive font-semibold text-destructive-foreground">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setResetOpen(true)}
+          className="h-12 w-full rounded-full bg-destructive font-semibold text-destructive-foreground"
+        >
           {t("reset")}
         </button>
       </section>
 
       {resetOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => !busy && setResetOpen(false)}>
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+          onClick={() => !busy && setResetOpen(false)}
+        >
           <div className="w-full max-w-sm rounded-3xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <p className="text-base font-bold">{t("resetTitle")}</p>
             <p className="mt-2 text-sm text-muted-foreground">{t("resetBody")}</p>
             <div className="mt-3 space-y-2 rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
-              <p>{lang === "rw"
-                ? "Telefone gusa: isiba amakuru ari kuri iyi telefone gusa. Ayari kuri cloud arasigara kandi ashobora kugaruka wongera kwinjira."
-                : "Phone only: clears this device but keeps cloud backup. That data can return when you sign in again."}</p>
-              <p>{lang === "rw"
-                ? "Telefone + cloud: bisaba internet na konti yinjiye. Niba cloud itasibwe neza, amakuru yo kuri telefone ntazasibwa."
-                : "Phone + cloud: requires internet and an active sign-in. If cloud deletion fails, this phone will not be cleared."}</p>
+              <p>
+                {lang === "rw"
+                  ? "Telefone gusa: isiba amakuru ari kuri iyi telefone gusa. Ayari kuri cloud arasigara kandi ashobora kugaruka wongera kwinjira."
+                  : "Phone only: clears this device but keeps cloud backup. That data can return when you sign in again."}
+              </p>
+              <p>
+                {lang === "rw"
+                  ? "Telefone + cloud: bisaba internet na konti yinjiye. Niba cloud itasibwe neza, amakuru yo kuri telefone ntazasibwa."
+                  : "Phone + cloud: requires internet and an active sign-in. If cloud deletion fails, this phone will not be cleared."}
+              </p>
             </div>
             {busy && <p className="mt-2 text-center text-xs text-primary">{t("pleaseWait")}</p>}
             <div className="mt-4 space-y-2">
               <button type="button" disabled={busy} onClick={resetAppOnly} className="h-12 w-full rounded-full border font-semibold">
                 {t("resetPhoneOnly")}
               </button>
-              <button type="button" disabled={busy} onClick={resetFull} className="h-12 w-full rounded-full bg-destructive font-semibold text-destructive-foreground">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={resetFull}
+                className="h-12 w-full rounded-full bg-destructive font-semibold text-destructive-foreground"
+              >
                 {t("resetFull")}
               </button>
               <button type="button" disabled={busy} onClick={() => setResetOpen(false)} className="h-11 w-full rounded-full text-sm text-muted-foreground">
