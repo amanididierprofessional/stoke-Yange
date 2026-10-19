@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { db, type Sale } from "@/lib/db";
@@ -13,20 +13,55 @@ export const Route = createFileRoute("/history")({
     meta: [
       { title: "History — Stoke Yange" },
       { name: "description", content: "All sales with daily cash and credit summaries." },
-      { property: "og:title", content: "History — Stoke Yange" },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { property: "og:description", content: "All sales with daily cash and credit summaries." },
     ],
   }),
   component: HistoryPage,
 });
 
+type FeedItem =
+  | { kind: "sale"; at: number; sale: Sale }
+  | { kind: "debt"; at: number; id: number; partyName: string; description: string; amount: number; partyKind: string }
+  | { kind: "payment"; at: number; id: number; partyName: string; amount: number };
+
 function HistoryPage() {
-  const { t } = useI18n();
-  const sales = useLiveQuery(() => db.sales.orderBy("createdAt").reverse().limit(500).toArray(), []) ?? [];
+  const { t, lang } = useI18n();
+  const sales = useLiveQuery(() => db.sales.orderBy("createdAt").reverse().limit(400).toArray(), []) ?? [];
   const parties = useLiveQuery(() => db.parties.toArray(), []) ?? [];
+  const debts = useLiveQuery(() => db.debts.orderBy("createdAt").reverse().limit(200).toArray(), []) ?? [];
+  const payments = useLiveQuery(() => db.payments.orderBy("createdAt").reverse().limit(200).toArray(), []) ?? [];
   const [selected, setSelected] = useState<number[]>([]);
+
+  const partyName = (id?: number) => parties.find((p) => p.id === id)?.name ?? "";
+  const partyKind = (id?: number) => parties.find((p) => p.id === id)?.kind ?? "";
+
+  const feed: FeedItem[] = useMemo(() => {
+    const items: FeedItem[] = [];
+    for (const s of sales) items.push({ kind: "sale", at: s.createdAt, sale: s });
+    for (const d of debts) {
+      // Skip debts that are pure sale-linked duplicates already in sales feed as credit sale
+      if (d.saleId != null) continue;
+      items.push({
+        kind: "debt",
+        at: d.createdAt,
+        id: d.id!,
+        partyName: partyName(d.partyId),
+        description: d.description,
+        amount: d.amount,
+        partyKind: partyKind(d.partyId),
+      });
+    }
+    for (const p of payments) {
+      items.push({
+        kind: "payment",
+        at: p.createdAt,
+        id: p.id!,
+        partyName: partyName(p.partyId),
+        amount: p.amount,
+      });
+    }
+    items.sort((a, b) => b.at - a.at);
+    return items;
+  }, [sales, debts, payments, parties]);
 
   const toggle = (id: number) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -36,10 +71,10 @@ function HistoryPage() {
   const selectedSales = sales.filter((s) => s.id != null && selected.includes(s.id) && !s.reversed);
   const selectedTotal = selectedSales.reduce((a, s) => a + s.total, 0);
 
-  const groups = new Map<string, Sale[]>();
-  for (const s of sales) {
-    const k = new Date(s.createdAt).toDateString();
-    groups.set(k, [...(groups.get(k) ?? []), s]);
+  const groups = new Map<string, FeedItem[]>();
+  for (const item of feed) {
+    const k = new Date(item.at).toDateString();
+    groups.set(k, [...(groups.get(k) ?? []), item]);
   }
   const todayKey = new Date().toDateString();
 
@@ -49,16 +84,7 @@ function HistoryPage() {
 
       {selected.length > 0 && (
         <section className="relative rounded-3xl bg-hero p-5 text-primary-foreground shadow-card">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              clearSel();
-            }}
-            className="absolute right-3 top-3 z-20 grid size-9 place-items-center rounded-full bg-black/30 ring-1 ring-white/50"
-            aria-label="Close"
-          >
+          <button type="button" onClick={clearSel} className="absolute right-3 top-3 z-20 grid size-9 place-items-center rounded-full bg-black/30 ring-1 ring-white/50" aria-label="Close">
             <X className="size-4" />
           </button>
           <p className="text-xs font-medium opacity-90">{t("selectedTotal")}</p>
@@ -70,7 +96,8 @@ function HistoryPage() {
       )}
 
       {[...groups.entries()].map(([day, list]) => {
-        const live = list.filter((s) => !s.reversed);
+        const daySales = list.filter((i): i is Extract<FeedItem, { kind: "sale" }> => i.kind === "sale").map((i) => i.sale);
+        const live = daySales.filter((s) => !s.reversed);
         const cash = live.filter((s) => s.type === "cash").reduce((a, s) => a + s.total, 0);
         const credit = live.filter((s) => s.type === "credit").reduce((a, s) => a + s.total, 0);
         const profit = live.reduce((a, s) => a + (s.unitPrice - s.unitCost) * s.qty, 0);
@@ -89,12 +116,46 @@ function HistoryPage() {
               </div>
             </div>
             <ul className="space-y-2">
-              {list.map((s) => {
+              {list.map((item) => {
+                if (item.kind === "debt") {
+                  return (
+                    <li key={`d-${item.id}`} className="flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{item.partyName || "—"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(item.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} ·{" "}
+                          {item.description}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        {lang === "rw" ? "Ideni" : "Debt"}
+                      </span>
+                      <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums">{fmt(item.amount)}</span>
+                    </li>
+                  );
+                }
+                if (item.kind === "payment") {
+                  return (
+                    <li key={`p-${item.id}`} className="flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{item.partyName || "—"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(item.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
+                        {t("payments")}
+                      </span>
+                      <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums text-success">−{fmt(item.amount)}</span>
+                    </li>
+                  );
+                }
+                const s = item.sale;
                 const canUndo = !s.reversed && Date.now() - s.createdAt < UNDO_WINDOW_MS;
                 const isSel = s.id != null && selected.includes(s.id);
                 return (
                   <li
-                    key={s.id}
+                    key={`s-${s.id}`}
                     className={cn(
                       "flex items-center gap-1.5 rounded-2xl bg-card px-3 py-2.5 sm:gap-2",
                       s.reversed && "opacity-50",
@@ -107,7 +168,7 @@ function HistoryPage() {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(s.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-                        {s.partyId && ` · ${parties.find((p) => p.id === s.partyId)?.name ?? ""}`}
+                        {s.partyId && ` · ${partyName(s.partyId)}`}
                       </p>
                     </div>
                     <span
@@ -125,10 +186,7 @@ function HistoryPage() {
                           type="button"
                           aria-label="Select"
                           onClick={() => s.id != null && toggle(s.id)}
-                          className={cn(
-                            "grid size-7 place-items-center rounded-full border",
-                            isSel && "border-primary bg-primary text-primary-foreground",
-                          )}
+                          className={cn("grid size-7 place-items-center rounded-full border", isSel && "border-primary bg-primary text-primary-foreground")}
                         >
                           <Plus className="size-3.5" />
                         </button>
@@ -151,7 +209,7 @@ function HistoryPage() {
           </section>
         );
       })}
-      {sales.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
+      {feed.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
     </div>
   );
 }
