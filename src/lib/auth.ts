@@ -97,7 +97,7 @@ export async function signUp(opts: {
   fullName: string;
   businessName: string;
   age: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true } | { ok: false; error: string; detail?: string }> {
   const id = normalizeId(opts.loginType, opts.identifier);
   if (!id) return { ok: false, error: "identifier" };
   if (opts.password.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
@@ -116,65 +116,88 @@ export async function signUp(opts: {
 
   const client = await ensureSupabase();
   if (!navigator.onLine) return { ok: false, error: "internet_required" };
-  if (!supabaseConfigured || !client) return { ok: false, error: "cloud_unavailable" };
+  if (!supabaseConfigured || !client) return { ok: false, error: "cloud_unavailable", detail: "Supabase not configured in this build" };
+
+  let lastCloudMsg = "";
   let cloudBlocked = false;
 
-  if (supabaseConfigured && client && navigator.onLine) {
-    try {
-      const email = opts.loginType === "email" ? id : syntheticEmail(id);
-      const { data, error } = await client.auth.signUp({
-        email,
-        password: opts.password,
-        options: {
-          data: {
-            full_name: account.fullName,
-            business_name: account.businessName,
-            age: account.age,
-            phone: opts.loginType === "phone" ? id : "",
-          },
+  try {
+    const email = opts.loginType === "email" ? id : syntheticEmail(id);
+    const { data, error } = await client.auth.signUp({
+      email,
+      password: opts.password,
+      options: {
+        data: {
+          full_name: account.fullName,
+          business_name: account.businessName,
+          age: account.age,
+          phone: opts.loginType === "phone" ? id : "",
         },
-      });
+      },
+    });
 
-      if (error) {
-        const msg = error.message || "";
-        console.warn("[auth] signup cloud", msg);
-        if (/already|registered|exists/i.test(msg)) return { ok: false, error: "exists" };
-        if (/password/i.test(msg) && /6|least|characters/i.test(msg)) return { ok: false, error: "password_short" };
-        cloudBlocked = true;
-      } else {
-        if (!data.session) {
-          const sign = await client.auth.signInWithPassword({ email, password: opts.password });
-          if (sign.error) {
-            if (/email not confirmed|confirm your email/i.test(sign.error.message)) {
-              return { ok: false, error: "confirmation_required" };
-            }
-            cloudBlocked = true;
+    if (error) {
+      const msg = error.message || "";
+      lastCloudMsg = msg;
+      console.warn("[auth] signup cloud", msg);
+      if (/already|registered|exists/i.test(msg)) return { ok: false, error: "exists", detail: msg };
+      if (/password/i.test(msg) && /6|least|characters/i.test(msg)) {
+        return { ok: false, error: "password_short", detail: msg };
+      }
+      if (/email|smtp|rate|confirm/i.test(msg)) {
+        return { ok: false, error: "confirmation_required", detail: msg };
+      }
+      cloudBlocked = true;
+    } else {
+      if (!data.session) {
+        const sign = await client.auth.signInWithPassword({ email, password: opts.password });
+        if (sign.error) {
+          lastCloudMsg = sign.error.message;
+          if (/email not confirmed|confirm your email/i.test(sign.error.message)) {
+            return {
+              ok: false,
+              error: "confirmation_required",
+              detail: sign.error.message,
+            };
           }
-        }
-        const { data: sess } = await client.auth.getSession();
-        const uid = sess.session?.user?.id;
-        if (!uid) cloudBlocked = true;
-        if (uid) {
-          account.supabaseUserId = uid;
-          await client.from("profiles").upsert({
-            id: uid,
-            shop_name: account.businessName,
-            full_name: account.fullName,
-            phone: opts.loginType === "phone" ? id : "",
-            age: account.age,
-            email: opts.loginType === "email" ? id : email,
-            updated_at: new Date().toISOString(),
-          });
+          cloudBlocked = true;
         }
       }
-    } catch (e) {
-      console.warn("[auth] cloud signup exception", e);
-      cloudBlocked = true;
+      const { data: sess } = await client.auth.getSession();
+      const uid = sess.session?.user?.id;
+      if (!uid) {
+        cloudBlocked = true;
+        lastCloudMsg =
+          lastCloudMsg ||
+          "No session after signup. Disable Confirm email in Supabase Auth → Providers → Email.";
+      }
+      if (uid) {
+        account.supabaseUserId = uid;
+        await client.from("profiles").upsert({
+          id: uid,
+          shop_name: account.businessName,
+          full_name: account.fullName,
+          phone: opts.loginType === "phone" ? id : "",
+          age: account.age,
+          email: opts.loginType === "email" ? id : email,
+          updated_at: new Date().toISOString(),
+        });
+      }
     }
+  } catch (e) {
+    console.warn("[auth] cloud signup exception", e);
+    cloudBlocked = true;
+    lastCloudMsg = String(e);
   }
 
-  if (cloudBlocked && supabaseConfigured && navigator.onLine) {
-    return { ok: false, error: "cloud_unavailable" };
+  if (cloudBlocked) {
+    return {
+      ok: false,
+      error: "cloud_unavailable",
+      detail:
+        lastCloudMsg ||
+        "Could not create cloud account. Check internet, Supabase keys, and Confirm email = OFF.",
+    };
   }
 
   const existing = await getAccount();
@@ -191,7 +214,7 @@ export async function signIn(opts: {
   loginType: "phone" | "email";
   identifier: string;
   password: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true } | { ok: false; error: string; detail?: string }> {
   const id = normalizeId(opts.loginType, opts.identifier);
   if (!id || opts.password.length < 1) return { ok: false, error: "bad_password" };
 
@@ -202,10 +225,10 @@ export async function signIn(opts: {
     const { data, error } = await client.auth.signInWithPassword({ email, password: opts.password });
     if (error) {
       if (/email not confirmed|confirm your email/i.test(error.message)) {
-        return { ok: false, error: "confirmation_required" };
+        return { ok: false, error: "confirmation_required", detail: error.message };
       }
       if (/invalid api key|invalid api|api key/i.test(error.message)) {
-        return { ok: false, error: "cloud_unavailable" };
+        return { ok: false, error: "cloud_unavailable", detail: error.message };
       }
     }
     if (data?.session?.user) {
@@ -277,7 +300,6 @@ export async function requestEmailOtp(
   });
   if (error) {
     console.warn("[auth] email otp", error.message);
-    // Fallback: recovery link email
     const { error: e2 } = await client.auth.resetPasswordForEmail(email, {
       redirectTo: typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
     });
@@ -312,7 +334,6 @@ export async function verifyEmailOtpAndSetPassword(opts: {
     type: "email",
   });
   if (error || !data.session) {
-    // Try recovery type (from reset link flow codes if any)
     const second = await client.auth.verifyOtp({
       email,
       token,
@@ -335,7 +356,6 @@ export async function verifyEmailOtpAndSetPassword(opts: {
     account.passwordHash = await sha256(opts.newPassword);
     await saveAccount(account);
   }
-  // Sign out recovery session — user must sign in with new password
   try {
     await client.auth.signOut({ scope: "local" });
   } catch {
@@ -357,14 +377,12 @@ export async function recoverPassword(opts: {
 
   const client = await ensureSupabase();
 
-  // Email + online → send OTP / recovery email
   if (opts.loginType === "email" && supabaseConfigured && client && navigator.onLine) {
     const sent = await requestEmailOtp(id);
     if (!sent.ok) return { ok: false, error: sent.error };
     return { ok: true, mode: "otp_sent" };
   }
 
-  // Phone + online without local match → needs support (no SMS provider yet)
   if (opts.loginType === "phone" && supabaseConfigured && client && navigator.onLine) {
     const account = await getAccount();
     const match =
@@ -377,7 +395,6 @@ export async function recoverPassword(opts: {
       if (!opts.newPassword || opts.newPassword.length < MIN_PASSWORD) {
         return { ok: false, error: "password_short" };
       }
-      // Update local hash; try cloud password update only if already signed in as this user
       account.passwordHash = await sha256(opts.newPassword);
       await saveAccount(account);
       try {
@@ -386,7 +403,7 @@ export async function recoverPassword(opts: {
           await client.auth.updateUser({ password: opts.newPassword });
         }
       } catch {
-        /* cloud password may stay old until they use support / email path */
+        /* */
       }
       setLoggedIn(false);
       return { ok: true, mode: "local" };
@@ -394,7 +411,6 @@ export async function recoverPassword(opts: {
     return { ok: false, error: "phone_support" };
   }
 
-  // Offline / local-only recovery on this device
   if (!opts.newPassword || opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
   const account = await getAccount();
   if (!account) return { ok: false, error: navigator.onLine ? "no_account" : "internet_required" };
@@ -438,7 +454,6 @@ export async function completePasswordRecovery(
   return { ok: true };
 }
 
-/** True if URL/hash indicates a Supabase recovery session. */
 export function isRecoveryHash(): boolean {
   if (typeof window === "undefined") return false;
   const h = window.location.hash || "";
