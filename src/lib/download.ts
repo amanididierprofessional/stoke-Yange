@@ -1,34 +1,12 @@
-/** Reliable file download for mobile browsers / PWA (must append <a> to DOM). */
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
+/** Reliable file download for mobile browsers, PWA, and Capacitor WebView. */
 
-  // Prefer Web Share API on mobile when available (iOS Safari often blocks <a download>)
-  const canShare =
-    typeof navigator !== "undefined" &&
-    typeof navigator.share === "function" &&
-    typeof navigator.canShare === "function";
-
-  if (canShare) {
-    try {
-      const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
-      if (navigator.canShare({ files: [file] })) {
-        void navigator
-          .share({ files: [file], title: filename })
-          .catch(() => {
-            // User cancelled or share failed — fall through to classic download
-            triggerAnchorDownload(url, filename);
-          })
-          .finally(() => {
-            window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-          });
-        return;
-      }
-    } catch {
-      // Fall through to anchor download
-    }
+function isNativeShell(): boolean {
+  try {
+    // Capacitor injects this on Android/iOS
+    return !!(window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
+  } catch {
+    return false;
   }
-
-  triggerAnchorDownload(url, filename);
 }
 
 function triggerAnchorDownload(url: string, filename: string) {
@@ -36,19 +14,96 @@ function triggerAnchorDownload(url: string, filename: string) {
   a.href = url;
   a.download = filename;
   a.rel = "noopener";
-  a.target = "_blank";
+  // Avoid target=_blank on native — opens empty tab and kills the download in WebView
+  if (!isNativeShell()) a.target = "_blank";
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
-  // Some WebViews need a tiny delay before revoke
   window.setTimeout(() => {
     a.remove();
     URL.revokeObjectURL(url);
-  }, 2000);
+  }, 4000);
+}
+
+/** Force download via data-URL (works better in some Android WebViews). */
+function triggerDataUrlDownload(blob: Blob, filename: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.onload = () => {
+      try {
+        const a = document.createElement("a");
+        a.href = String(reader.result);
+        a.download = filename;
+        a.rel = "noopener";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        window.setTimeout(() => a.remove(), 2000);
+        resolve();
+      } catch (e) {
+        reject(e);
+      }
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Save a file to the device.
+ * Does NOT auto-open the system Share sheet (that only showed a toast before).
+ * Share is available via shareBlob() if the user wants it.
+ */
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  const url = URL.createObjectURL(blob);
+
+  // 1) Classic <a download> (Chrome / desktop / many Android browsers)
+  try {
+    triggerAnchorDownload(url, filename);
+  } catch {
+    /* continue */
+  }
+
+  // 2) Data-URL fallback for Capacitor / stubborn WebViews
+  if (isNativeShell()) {
+    try {
+      await triggerDataUrlDownload(blob, filename);
+      return;
+    } catch (e) {
+      console.warn("[download] data-url failed", e);
+    }
+  }
+
+  // 3) Optional share as last resort on native (user must pick Save / Files / Drive)
+  if (isNativeShell() && typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    try {
+      const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        return;
+      }
+    } catch (e) {
+      // User cancelled share — still ok; anchor may have worked
+      console.warn("[download] share", e);
+    }
+  }
+}
+
+/** Explicit share action (optional button). */
+export async function shareBlob(blob: Blob, filename: string): Promise<boolean> {
+  try {
+    if (typeof navigator === "undefined" || typeof navigator.share !== "function") return false;
+    const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+    if (typeof navigator.canShare === "function" && !navigator.canShare({ files: [file] })) return false;
+    await navigator.share({ files: [file], title: filename });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function downloadText(text: string, filename: string, mime: string) {
-  downloadBlob(new Blob([text], { type: `${mime};charset=utf-8` }), filename);
+  return downloadBlob(new Blob([text], { type: `${mime};charset=utf-8` }), filename);
 }
 
 /** Open HTML report in a new tab (more reliable than forced download on iOS). */
@@ -57,8 +112,7 @@ export function openHtmlReport(html: string, filename: string) {
   const url = URL.createObjectURL(blob);
   const opened = window.open(url, "_blank");
   if (!opened) {
-    // Popup blocked — fall back to download
-    downloadBlob(blob, filename);
+    void downloadBlob(blob, filename);
   } else {
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }

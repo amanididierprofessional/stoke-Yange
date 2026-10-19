@@ -2,6 +2,7 @@
  * Offline-first sync: push Dexie → Supabase, pull Supabase → Dexie.
  * fullSync = push then force-pull (multi-device / same business account).
  * checkRemoteAhead = lightweight “other phone has newer data” detector for the sync pill.
+ * blockCloudPull = set after “clear phone only” so auto-sync does not refill the shop.
  */
 import { db } from "./db";
 import { ensureSupabase, supabaseConfigured } from "./supabase";
@@ -39,7 +40,7 @@ export function trySync(opts?: { force?: boolean; pushOnly?: boolean }): Promise
       if (mode !== "auto") return { ok: false, reason: "manual_mode" };
     }
     if (opts?.pushOnly) return doPush();
-    return doFullSync();
+    return doFullSync({ allowBlockedPull: false });
   })().finally(() => {
     running = null;
     if (again) {
@@ -52,6 +53,7 @@ export function trySync(opts?: { force?: boolean; pushOnly?: boolean }): Promise
   return running;
 }
 
+/** User-triggered sync always clears the phone-only clear block and may pull. */
 export async function fullSync(): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
   if (syncPaused) return { ok: false, reason: "reset_in_progress" };
   if (running) {
@@ -63,18 +65,31 @@ export async function fullSync(): Promise<{ ok: boolean; reason?: string; pulled
   }
   if (syncPaused) return { ok: false, reason: "reset_in_progress" };
 
-  running = (async () => doFullSync())().finally(() => {
+  // Manual Sync means the user wants cloud data again
+  await db.settings.delete("blockCloudPull");
+
+  running = (async () => doFullSync({ allowBlockedPull: true }))().finally(() => {
     running = null;
   });
 
   return running as Promise<{ ok: boolean; reason?: string; pulled?: number }>;
 }
 
-async function doFullSync(): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
+async function isPullBlocked(): Promise<boolean> {
+  const row = await db.settings.get("blockCloudPull");
+  return row?.value === "1";
+}
+
+async function doFullSync(opts: { allowBlockedPull: boolean }): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
   const push = await doPush();
   if (!navigator.onLine) return push;
   if (push.reason === "no_session" || push.reason === "not_configured" || push.reason === "offline") {
     return push;
+  }
+
+  if (!opts.allowBlockedPull && (await isPullBlocked())) {
+    console.info("[sync] skip pull — phone-only clear active until user taps Sync");
+    return { ok: true, reason: "pull_blocked_after_local_clear", pulled: 0 };
   }
 
   const localCount = await db.products.count();
@@ -105,10 +120,14 @@ export async function clearShopTables() {
   );
 }
 
+/** Wipe shop data on this phone only; keep account/session. Blocks auto cloud refill. */
 export async function clearLocalShopKeepAccount() {
   await clearShopTables();
   await db.settings.delete("seeded");
   await db.settings.put({ key: "initialized", value: "1" });
+  // Prevent AppShell auto fullSync from immediately restoring cloud data
+  await db.settings.put({ key: "blockCloudPull", value: "1" });
+  await db.settings.put({ key: "cloudSyncMode", value: "manual" });
 }
 
 /** Snapshot of local shop size for remote comparison. */
@@ -140,6 +159,13 @@ async function localFingerprint() {
  */
 export async function checkRemoteAhead(): Promise<{ ahead: boolean; reason?: string }> {
   if (!supabaseConfigured || !navigator.onLine) return { ahead: false, reason: "offline" };
+  if (await isPullBlocked()) {
+    // After phone-only clear, cloud is “ahead” by design — show pill so user can restore
+    const local = await localFingerprint();
+    if (local.productCount === 0 && local.saleCount === 0) {
+      return { ahead: true, reason: "local_cleared" };
+    }
+  }
   const client = await ensureSupabase();
   if (!client) return { ahead: false, reason: "not_configured" };
 
@@ -149,7 +175,6 @@ export async function checkRemoteAhead(): Promise<{ ahead: boolean; reason?: str
 
   try {
     const local = await localFingerprint();
-    // Lightweight: only fetch ids + timestamps, not full rows
     const [pr, sa, de, pa, pt] = await Promise.all([
       client.from("products").select("local_id, updated_at").eq("user_id", userId),
       client.from("sales").select("local_id, created_at").eq("user_id", userId),
@@ -182,7 +207,6 @@ export async function checkRemoteAhead(): Promise<{ ahead: boolean; reason?: str
       remotePayCount > local.paymentCount ||
       remotePartyCount > local.partyCount;
 
-    // Cloud has newer activity (allow 5s skew)
     const newer = remoteMax > local.maxTs + 5000;
 
     return { ahead: moreRows || newer };
@@ -240,6 +264,18 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
     if (profileErr) return { ok: false, reason: `profile: ${profileErr.message}` };
   } catch (e) {
     return { ok: false, reason: `profile: ${String(e)}` };
+  }
+
+  // After phone-only clear we must NOT push empty tables over cloud data
+  if (await isPullBlocked()) {
+    const n =
+      (await db.products.count()) +
+      (await db.parties.count()) +
+      (await db.sales.count()) +
+      (await db.debts.count());
+    if (n === 0) {
+      return { ok: true, reason: "skip_empty_push_after_local_clear" };
+    }
   }
 
   const pending = await db.outbox.orderBy("createdAt").toArray();
@@ -383,6 +419,8 @@ export async function pullFromCloud(opts?: {
   force?: boolean;
 }): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
   if (!supabaseConfigured || !navigator.onLine) return { ok: false, reason: "offline" };
+  if (await isPullBlocked()) return { ok: false, reason: "pull_blocked_after_local_clear", pulled: 0 };
+
   const client = await ensureSupabase();
   if (!client) return { ok: false, reason: "not_configured" };
 
