@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Bell, BookUser, History, Package, Settings, ShoppingBag, Wifi, WifiOff, Cloud, X, RefreshCw } from "lucide-react";
 import { db, ensureSeeded } from "@/lib/db";
-import { fullSync, trySync } from "@/lib/sync";
+import { checkRemoteAhead, fullSync, trySync } from "@/lib/sync";
 import { isLoggedIn } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 
 const AUTO_SYNC_MS = 40_000;
+const REMOTE_CHECK_MS = 25_000;
 
 export function useShopName() {
   return useLiveQuery(() => db.settings.get("shopName"), [])?.value ?? "Iduka Ryanjye";
@@ -31,6 +32,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const syncMode = useLiveQuery(() => db.settings.get("cloudSyncMode"), [])?.value;
   const promptDismissed = useLiveQuery(() => db.settings.get("cloudSyncPromptDismissed"), [])?.value === "1";
   const [showCloudPrompt, setShowCloudPrompt] = useState(false);
+  const [remoteAhead, setRemoteAhead] = useState(false);
+  const [pillBusy, setPillBusy] = useState(false);
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
@@ -43,7 +46,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const onAuthed = useCallback(() => setAuthed(true), []);
 
-  // Show cloud prompt once the user is logged in and has not chosen a mode yet
   useEffect(() => {
     if (authed && !syncMode && !promptDismissed) setShowCloudPrompt(true);
   }, [authed, syncMode, promptDismissed]);
@@ -57,21 +59,26 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (!result.ok && result.reason !== "no_session") {
         console.warn("[cloud-sync] automatic sync setup:", result.reason);
       }
+      setRemoteAhead(false);
     }
   };
 
   const dismissCloudPrompt = async () => {
     await db.settings.put({ key: "cloudSyncPromptDismissed", value: "1" });
-    // Default to manual if they dismiss without choosing
     if (!syncMode) await db.settings.put({ key: "cloudSyncMode", value: "manual" });
     setShowCloudPrompt(false);
   };
 
-  // Periodic bidirectional sync when auto mode is on
+  // Auto bidirectional sync
   useEffect(() => {
     if (!authed || syncMode !== "auto") return;
     const tick = () => {
-      if (navigator.onLine) void fullSync().catch(() => {});
+      if (navigator.onLine)
+        void fullSync()
+          .then((r) => {
+            if (r.ok) setRemoteAhead(false);
+          })
+          .catch(() => {});
     };
     tick();
     const id = window.setInterval(tick, AUTO_SYNC_MS);
@@ -84,6 +91,43 @@ export function AppShell({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [authed, syncMode]);
+
+  // Remote-ahead pill: poll while online + logged in; also on reconnect
+  useEffect(() => {
+    if (!authed) {
+      setRemoteAhead(false);
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      if (!navigator.onLine) return;
+      const res = await checkRemoteAhead();
+      if (!cancelled) setRemoteAhead(!!res.ahead);
+    };
+    void check();
+    const id = window.setInterval(check, REMOTE_CHECK_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [authed, online]);
+
+  const applyRemotePill = async () => {
+    setPillBusy(true);
+    try {
+      const r = await fullSync();
+      if (r.ok) {
+        setRemoteAhead(false);
+      }
+    } finally {
+      setPillBusy(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +183,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     setOnline(navigator.onLine);
     const on = () => {
       setOnline(true);
-      void fullSync().catch(() => trySync().catch(() => {}));
+      void fullSync()
+        .then((r) => {
+          if (r.ok) setRemoteAhead(false);
+          else void checkRemoteAhead().then((c) => setRemoteAhead(!!c.ahead));
+        })
+        .catch(() => {
+          void checkRemoteAhead().then((c) => setRemoteAhead(!!c.ahead));
+        });
     };
     const off = () => setOnline(false);
     window.addEventListener("online", on);
@@ -169,17 +220,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
         <BrandLogo className="mb-5 size-16 rounded-none" imgClassName="rounded-none object-contain" />
         <p className="text-sm font-semibold text-foreground">Stoke Yange</p>
-        <div className="mt-5 w-48" role="status" aria-live="polite" aria-label={lang === "rw" ? "App irafunguka" : "App is loading"}>
-          <div className="mb-2 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>{lang === "rw" ? "Turimo gutegura app yawe…" : "Getting your app ready…"}</span>
+        <div className="mt-5 w-48" role="status" aria-live="polite">
+          <div className="mb-2 text-[11px] text-muted-foreground">
+            {lang === "rw" ? "Turimo gutegura app yawe…" : "Getting your app ready…"}
           </div>
-          <div
-            className="h-2.5 w-full overflow-hidden rounded-full bg-primary/10"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={startupProgress}
-          >
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-primary/10">
             <div className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out" style={{ width: `${startupProgress}%` }} />
           </div>
         </div>
@@ -209,7 +254,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {online ? <Wifi className="size-3 text-success" /> : <WifiOff className="size-3 text-warning-foreground" />}
               {online ? t("online") : t("offline")}
               {pending > 0 ? ` · ${pending} ${t("pending")}` : ""}
-              {syncMode === "auto" && online ? (lang === "rw" ? " · Auto" : " · Auto") : ""}
+              {syncMode === "auto" && online ? " · Auto" : ""}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -219,10 +264,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="flex h-9 items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm"
               aria-label="Toggle language"
             >
-              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
                 EN
               </span>
-              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
                 RW
               </span>
             </button>
@@ -246,66 +291,57 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           </div>
         </div>
+
+        {remoteAhead && online && authed && (
+          <button
+            type="button"
+            onClick={applyRemotePill}
+            disabled={pillBusy}
+            className="mt-2 flex w-full items-center justify-between gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-left shadow-sm active:bg-primary/15"
+          >
+            <span className="min-w-0 flex-1 text-xs font-semibold text-primary">
+              {lang === "rw"
+                ? "Hari amakuru mashya kuri cloud — kanda Sync"
+                : "New cloud changes — tap to sync"}
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-primary-foreground">
+              <RefreshCw className={cn("size-3", pillBusy && "animate-spin")} />
+              Sync
+            </span>
+          </button>
+        )}
       </header>
       <main className="px-4">{children}</main>
       {!authed && <AuthWelcome onAuthed={onAuthed} />}
       {showCloudPrompt && (
-        <div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cloud-backup-title"
-        >
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true">
           <section className="relative w-full max-w-sm rounded-3xl border bg-card p-5 shadow-2xl">
-            <button
-              type="button"
-              onClick={dismissCloudPrompt}
-              aria-label="Funga"
-              className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
+            <button type="button" onClick={dismissCloudPrompt} className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted">
               <X className="size-4" />
             </button>
             <div className="mb-3 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
               <Cloud className="size-6" />
             </div>
-            <h2 id="cloud-backup-title" className="pr-7 text-lg font-bold">
-              {lang === "rw" ? "Bika amakuru yawe kuri cloud" : "Back up your shop to the cloud"}
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            <h2 className="pr-7 text-lg font-bold">{lang === "rw" ? "Bika amakuru yawe kuri cloud" : "Back up your shop to the cloud"}</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
               {lang === "rw"
                 ? "Hitamo Auto kugira ngo amakuru ajye akoherezwa kandi akakirwa kuri izindi telefone zikoresha iyi konti."
                 : "Choose Auto so sales and stock upload and download on every phone using this account."}
             </p>
             <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => chooseSyncMode("auto")}
-                className="flex min-h-32 flex-col items-start rounded-2xl border border-primary/40 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
+              <button type="button" onClick={() => chooseSyncMode("auto")} className="flex min-h-32 flex-col items-start rounded-2xl border border-primary/40 bg-primary/5 p-3 text-left">
                 <span className="mb-3 grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground">
                   <RefreshCw className="size-4" />
                 </span>
-                <span className="text-sm font-bold leading-snug">
-                  {lang === "rw" ? "Kwibika automatic" : "Auto sync"}
-                </span>
-                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                  {lang === "rw" ? "Buri ~40s + igihe ufite internet." : "Every ~40s while online."}
-                </span>
+                <span className="text-sm font-bold">{lang === "rw" ? "Kwibika automatic" : "Auto sync"}</span>
+                <span className="mt-1 text-[11px] text-muted-foreground">{lang === "rw" ? "Buri ~40s." : "Every ~40s."}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => chooseSyncMode("manual")}
-                className="flex min-h-32 flex-col items-start rounded-2xl border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
+              <button type="button" onClick={() => chooseSyncMode("manual")} className="flex min-h-32 flex-col items-start rounded-2xl border p-3 text-left">
                 <span className="mb-3 grid size-9 place-items-center rounded-xl bg-muted">
                   <Cloud className="size-4" />
                 </span>
-                <span className="text-sm font-bold leading-snug">
-                  {lang === "rw" ? "Kuyishyiriraho" : "Manual only"}
-                </span>
-                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                  {lang === "rw" ? "Kanda Sync muri Settings." : "Tap Sync in Settings."}
-                </span>
+                <span className="text-sm font-bold">{lang === "rw" ? "Kuyishyiriraho" : "Manual only"}</span>
+                <span className="mt-1 text-[11px] text-muted-foreground">{lang === "rw" ? "Kanda Sync." : "Tap Sync."}</span>
               </button>
             </div>
           </section>
@@ -351,7 +387,7 @@ export function CategoryPills({
           type="button"
           onClick={() => onChange(c)}
           className={cn(
-            "h-9 shrink-0 rounded-full px-4 text-sm font-medium transition-colors",
+            "h-9 shrink-0 rounded-full px-4 text-sm font-medium",
             value === c ? "bg-primary text-primary-foreground" : "border bg-card text-foreground",
           )}
         >
