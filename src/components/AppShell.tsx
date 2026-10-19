@@ -5,13 +5,15 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Bell, BookUser, History, Package, Settings, ShoppingBag, Wifi, WifiOff, Cloud, X, RefreshCw } from "lucide-react";
 import { db, ensureSeeded } from "@/lib/db";
-import { trySync } from "@/lib/sync";
+import { fullSync, trySync } from "@/lib/sync";
 import { isLoggedIn } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { AuthWelcome } from "@/components/AuthWelcome";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
+
+const AUTO_SYNC_MS = 40_000;
 
 export function useShopName() {
   return useLiveQuery(() => db.settings.get("shopName"), [])?.value ?? "Iduka Ryanjye";
@@ -26,28 +28,32 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(false);
   const shop = useShopName();
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
-  const transactionCount = useLiveQuery(() => db.sales.count(), []) ?? 0;
   const syncMode = useLiveQuery(() => db.settings.get("cloudSyncMode"), [])?.value;
   const promptDismissed = useLiveQuery(() => db.settings.get("cloudSyncPromptDismissed"), [])?.value === "1";
   const [showCloudPrompt, setShowCloudPrompt] = useState(false);
   const lowCount = useLiveQuery(() => db.products.filter((p) => p.stock <= p.min).count(), []) ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
-  const isLanding = path === "/welcome" || path.startsWith("/welcome/") || path === "/install-android" || path.startsWith("/install-android/");
+  const isLanding =
+    path === "/welcome" ||
+    path.startsWith("/welcome/") ||
+    path === "/install-android" ||
+    path.startsWith("/install-android/");
   const isNative = Capacitor.isNativePlatform();
 
   const onAuthed = useCallback(() => setAuthed(true), []);
 
+  // Show cloud prompt once the user is logged in and has not chosen a mode yet
   useEffect(() => {
-    if (transactionCount >= 10 && !syncMode && !promptDismissed) setShowCloudPrompt(true);
-  }, [transactionCount, syncMode, promptDismissed]);
+    if (authed && !syncMode && !promptDismissed) setShowCloudPrompt(true);
+  }, [authed, syncMode, promptDismissed]);
 
   const chooseSyncMode = async (mode: "auto" | "manual") => {
     await db.settings.put({ key: "cloudSyncMode", value: mode });
     await db.settings.put({ key: "cloudSyncPromptDismissed", value: "1" });
     setShowCloudPrompt(false);
     if (mode === "auto" && navigator.onLine) {
-      const result = await trySync({ force: true });
+      const result = await fullSync();
       if (!result.ok && result.reason !== "no_session") {
         console.warn("[cloud-sync] automatic sync setup:", result.reason);
       }
@@ -56,8 +62,28 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const dismissCloudPrompt = async () => {
     await db.settings.put({ key: "cloudSyncPromptDismissed", value: "1" });
+    // Default to manual if they dismiss without choosing
+    if (!syncMode) await db.settings.put({ key: "cloudSyncMode", value: "manual" });
     setShowCloudPrompt(false);
   };
+
+  // Periodic bidirectional sync when auto mode is on
+  useEffect(() => {
+    if (!authed || syncMode !== "auto") return;
+    const tick = () => {
+      if (navigator.onLine) void fullSync().catch(() => {});
+    };
+    tick();
+    const id = window.setInterval(tick, AUTO_SYNC_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [authed, syncMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,8 +120,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         setStartupProgress(76);
         if (cancelled) return;
         setAuthed(loggedIn);
-        if (navigator.onLine) {
-          void trySync().catch((error) => console.warn("[cloud-sync] background sync failed:", error));
+        if (navigator.onLine && loggedIn) {
+          const mode = (await db.settings.get("cloudSyncMode"))?.value;
+          if (mode === "auto") {
+            void fullSync().catch((error) => console.warn("[cloud-sync] startup fullSync:", error));
+          } else {
+            void trySync().catch((error) => console.warn("[cloud-sync] background sync failed:", error));
+          }
         }
         finishStartup();
       })().catch((error) => {
@@ -106,7 +137,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
 
     setOnline(navigator.onLine);
-    const on = () => { setOnline(true); trySync().catch(() => {}); };
+    const on = () => {
+      setOnline(true);
+      void fullSync().catch(() => trySync().catch(() => {}));
+    };
     const off = () => setOnline(false);
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
@@ -151,8 +185,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         {startupError && (
           <div className="mt-4 max-w-xs text-center" role="alert">
-            <p className="text-sm text-muted-foreground">{lang === "rw" ? "Amakuru yo kuri telefone ntiyafungutse. Funga izindi paji z'iyi app wongere ugerageze." : "Device data could not open. Close other copies of this app and try again."}</p>
-            <Button variant="outline" onClick={() => window.location.reload()} className="mt-4 rounded-full">{lang === "rw" ? "Ongera ugerageze" : "Try again"}</Button>
+            <p className="text-sm text-muted-foreground">
+              {lang === "rw"
+                ? "Amakuru yo kuri telefone ntiyafungutse. Funga izindi paji z'iyi app wongere ugerageze."
+                : "Device data could not open. Close other copies of this app and try again."}
+            </p>
+            <Button variant="outline" onClick={() => window.location.reload()} className="mt-4 rounded-full">
+              {lang === "rw" ? "Ongera ugerageze" : "Try again"}
+            </Button>
           </div>
         )}
       </div>
@@ -169,12 +209,22 @@ export function AppShell({ children }: { children: ReactNode }) {
               {online ? <Wifi className="size-3 text-success" /> : <WifiOff className="size-3 text-warning-foreground" />}
               {online ? t("online") : t("offline")}
               {pending > 0 ? ` · ${pending} ${t("pending")}` : ""}
+              {syncMode === "auto" && online ? (lang === "rw" ? " · Auto" : " · Auto") : ""}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <button type="button" onClick={() => setLang(lang === "en" ? "rw" : "en")} className="flex h-9 items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm" aria-label="Toggle language">
-              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>EN</span>
-              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>RW</span>
+            <button
+              type="button"
+              onClick={() => setLang(lang === "en" ? "rw" : "en")}
+              className="flex h-9 items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm"
+              aria-label="Toggle language"
+            >
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
+                EN
+              </span>
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors", lang === "rw" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
+                RW
+              </span>
             </button>
             <Link
               to="/notifications"
@@ -200,26 +250,62 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="px-4">{children}</main>
       {!authed && <AuthWelcome onAuthed={onAuthed} />}
       {showCloudPrompt && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="cloud-backup-title">
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cloud-backup-title"
+        >
           <section className="relative w-full max-w-sm rounded-3xl border bg-card p-5 shadow-2xl">
-            <button type="button" onClick={dismissCloudPrompt} aria-label="Funga" className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+            <button
+              type="button"
+              onClick={dismissCloudPrompt}
+              aria-label="Funga"
+              className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
               <X className="size-4" />
             </button>
             <div className="mb-3 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
               <Cloud className="size-6" />
             </div>
-            <h2 id="cloud-backup-title" className="pr-7 text-lg font-bold">Bika amakuru yawe kuri cloud</h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Bika amakuru yawe kuri cloud kugira ngo ubashe kuyagarura ahazaza.</p>
+            <h2 id="cloud-backup-title" className="pr-7 text-lg font-bold">
+              {lang === "rw" ? "Bika amakuru yawe kuri cloud" : "Back up your shop to the cloud"}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              {lang === "rw"
+                ? "Hitamo Auto kugira ngo amakuru ajye akoherezwa kandi akakirwa kuri izindi telefone zikoresha iyi konti."
+                : "Choose Auto so sales and stock upload and download on every phone using this account."}
+            </p>
             <div className="mt-5 grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => chooseSyncMode("auto")} className="flex min-h-32 flex-col items-start rounded-2xl border border-primary/40 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-                <span className="mb-3 grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground"><RefreshCw className="size-4" /></span>
-                <span className="text-sm font-bold leading-snug">Kwibika mu gihe ufite internet</span>
-                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">Amakuru azajya abikwa igihe cyose ufite internet.</span>
+              <button
+                type="button"
+                onClick={() => chooseSyncMode("auto")}
+                className="flex min-h-32 flex-col items-start rounded-2xl border border-primary/40 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <span className="mb-3 grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground">
+                  <RefreshCw className="size-4" />
+                </span>
+                <span className="text-sm font-bold leading-snug">
+                  {lang === "rw" ? "Kwibika automatic" : "Auto sync"}
+                </span>
+                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                  {lang === "rw" ? "Buri ~40s + igihe ufite internet." : "Every ~40s while online."}
+                </span>
               </button>
-              <button type="button" onClick={() => chooseSyncMode("manual")} className="flex min-h-32 flex-col items-start rounded-2xl border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-                <span className="mb-3 grid size-9 place-items-center rounded-xl bg-muted"><Cloud className="size-4" /></span>
-                <span className="text-sm font-bold leading-snug">Kuyishyiriraho</span>
-                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">Wowe uhitamo igihe cyo kubika amakuru.</span>
+              <button
+                type="button"
+                onClick={() => chooseSyncMode("manual")}
+                className="flex min-h-32 flex-col items-start rounded-2xl border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <span className="mb-3 grid size-9 place-items-center rounded-xl bg-muted">
+                  <Cloud className="size-4" />
+                </span>
+                <span className="text-sm font-bold leading-snug">
+                  {lang === "rw" ? "Kuyishyiriraho" : "Manual only"}
+                </span>
+                <span className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                  {lang === "rw" ? "Kanda Sync muri Settings." : "Tap Sync in Settings."}
+                </span>
               </button>
             </div>
           </section>
@@ -229,7 +315,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         {tabs.map(({ to, label, icon: Icon }) => {
           const active = to === "/" ? path === "/" : path.startsWith(to);
           return (
-            <Link key={to} to={to} className={cn("flex h-12 items-center justify-center gap-2 rounded-full transition-all", active ? "flex-[2] bg-primary px-4 text-primary-foreground" : "flex-1 text-ink-foreground/70")}>
+            <Link
+              key={to}
+              to={to}
+              className={cn(
+                "flex h-12 items-center justify-center gap-2 rounded-full transition-all",
+                active ? "flex-[2] bg-primary px-4 text-primary-foreground" : "flex-1 text-ink-foreground/70",
+              )}
+            >
               <Icon className="size-5 shrink-0" />
               {active && <span className="truncate text-sm font-semibold">{label}</span>}
             </Link>
@@ -240,12 +333,28 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function CategoryPills({ value, onChange, categories }: { value: string; onChange: (c: string) => void; categories: string[] }) {
+export function CategoryPills({
+  value,
+  onChange,
+  categories,
+}: {
+  value: string;
+  onChange: (c: string) => void;
+  categories: string[];
+}) {
   const { t } = useI18n();
   return (
     <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
       {["__all", ...categories].map((c) => (
-        <button key={c} type="button" onClick={() => onChange(c)} className={cn("h-9 shrink-0 rounded-full px-4 text-sm font-medium transition-colors", value === c ? "bg-primary text-primary-foreground" : "border bg-card text-foreground")}>
+        <button
+          key={c}
+          type="button"
+          onClick={() => onChange(c)}
+          className={cn(
+            "h-9 shrink-0 rounded-full px-4 text-sm font-medium transition-colors",
+            value === c ? "bg-primary text-primary-foreground" : "border bg-card text-foreground",
+          )}
+        >
           {c === "__all" ? t("all") : c}
         </button>
       ))}

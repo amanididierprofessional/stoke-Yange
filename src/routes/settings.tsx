@@ -15,7 +15,7 @@ import {
   type Account,
 } from "@/lib/auth";
 import { exportPdfReport, exportSalesCsv } from "@/lib/report";
-import { pauseSync, trySync } from "@/lib/sync";
+import { clearLocalShopKeepAccount, fullSync, pauseSync } from "@/lib/sync";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -58,16 +58,27 @@ function SettingsPage() {
   const syncNow = async () => {
     setSyncing(true);
     try {
-      const result = await trySync({ force: true });
+      // Push this phone then pull cloud (other devices / workers)
+      const result = await fullSync();
       if (result.ok) {
-        toast.success("Amakuru yabitswe kuri cloud.");
+        toast.success(
+          lang === "rw"
+            ? "Amakuru yoherejwe kandi yakiriwe kuri cloud."
+            : "Data uploaded and refreshed from cloud.",
+        );
       } else {
         const message =
           result.reason === "offline"
-            ? "Nta internet ihari. Ongera ugerageze umaze kuyibona."
+            ? lang === "rw"
+              ? "Nta internet ihari. Ongera ugerageze umaze kuyibona."
+              : "No internet. Try again when you are online."
             : result.reason === "no_session"
-              ? "Banza winjire muri konti yawe kugira ngo ubike amakuru."
-              : `Kubika amakuru ntibyagenze neza: ${result.reason ?? "gerageza nanone"}`;
+              ? lang === "rw"
+                ? "Banza winjire muri konti yawe kugira ngo ubike amakuru."
+                : "Sign in first so we can sync your shop."
+              : lang === "rw"
+                ? `Kubika amakuru ntibyagenze neza: ${result.reason ?? "gerageza nanone"}`
+                : `Sync failed: ${result.reason ?? "try again"}`;
         toast.error(message);
       }
     } catch (e) {
@@ -105,16 +116,17 @@ function SettingsPage() {
     }
   };
 
+  /** Clear shop data on this phone; KEEP account + session (stay logged in). */
   const resetAppOnly = async () => {
     setBusy(true);
     let resumeSync: (() => void) | undefined;
     try {
       resumeSync = await pauseSync();
-      await signOutLocal();
+      await clearLocalShopKeepAccount();
       toast.success(
         lang === "rw"
-          ? "Amakuru yo kuri iyi telefone yasibwe. Ayari kuri cloud arasigaye."
-          : "This phone's app data was cleared. Cloud data was kept.",
+          ? "Amakuru y'iduka yasibwe kuri iyi telefone. Konti yawe iracyari. Ayari kuri cloud arasigaye."
+          : "Shop data on this phone was cleared. You are still signed in. Cloud backup was kept.",
       );
       window.location.reload();
     } catch (error) {
@@ -130,6 +142,7 @@ function SettingsPage() {
     }
   };
 
+  /** Wipe cloud shop + local shop; KEEP account logged in with empty shop. */
   const resetFull = async () => {
     setBusy(true);
     let resumeSync: (() => void) | undefined;
@@ -146,11 +159,11 @@ function SettingsPage() {
         );
         return;
       }
-      await signOutLocal();
+      await clearLocalShopKeepAccount();
       toast.success(
         lang === "rw"
-          ? "Amakuru yasibwe kuri telefone no kuri cloud."
-          : "Data was cleared from this phone and the cloud.",
+          ? "Amakuru y'iduka yasibwe kuri telefone no kuri cloud. Konti yawe iracyari."
+          : "Shop data was cleared on this phone and the cloud. You are still signed in.",
       );
       window.location.reload();
     } catch (error) {
@@ -180,28 +193,41 @@ function SettingsPage() {
               <h3 className="text-base font-bold">Cloud Sync</h3>
             </div>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.
+              {lang === "rw"
+                ? "Amakuru arajya akoherezwa kandi akakirwa automatic mu gihe ufite internet (n'izindi telefone zikoresha iyi konti)."
+                : "Data is uploaded and downloaded automatically while online (including other phones on this account)."}
             </p>
             <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-success">
               <span className="size-2 rounded-full bg-success" />
-              Kwibika mu gihe ufite internet birakora
+              {lang === "rw" ? "Auto-sync irakora" : "Auto-sync is on"}
             </p>
             {pendingSync > 0 && (
               <p className="mt-1 text-[11px] text-muted-foreground">
-                {pendingSync} bitaroherezwa; bizageragezwa internet igarutse.
+                {pendingSync} {lang === "rw" ? "bitaroherezwa" : "pending upload"}
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={async () => {
-              await db.settings.put({ key: "cloudSyncMode", value: "manual" });
-              toast.success("Kwibika mu buryo bwikora byahagaritswe.");
-            }}
-            className="inline-flex h-10 shrink-0 items-center justify-center rounded-full border px-3 text-xs font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            Hagarika
-          </button>
+          <div className="flex shrink-0 flex-col gap-2">
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={syncNow}
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "…" : "Sync"}
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await db.settings.put({ key: "cloudSyncMode", value: "manual" });
+                toast.success(lang === "rw" ? "Auto-sync yahagaritswe." : "Auto-sync turned off.");
+              }}
+              className="inline-flex h-9 items-center justify-center rounded-full border px-3 text-xs font-semibold"
+            >
+              {lang === "rw" ? "Hagarika" : "Off"}
+            </button>
+          </div>
         </section>
       ) : (
         <section className="flex min-h-36 items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-card p-5 shadow-card">
@@ -213,21 +239,38 @@ function SettingsPage() {
               <h3 className="text-base font-bold">Cloud Sync</h3>
             </div>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Ushobora kubika amakuru yawe kuri internet kugira ngo bizagufashe kuyagarura mu gihe wahinduye phone yawe.
+              {lang === "rw"
+                ? "Kanda Sync kugira ngo wohereze kandi wakire amakuru. Hitamo Auto kugira ngo bikore mu buryo bwikora."
+                : "Tap Sync to upload and download. Choose Auto for continuous two-way sync."}
             </p>
             <p className="mt-2 text-[11px] font-medium text-muted-foreground">
-              Kuyishyiriraho{pendingSync > 0 ? ` · ${pendingSync} bitaroherezwa` : ""}
+              {lang === "rw" ? "Manual" : "Manual"}
+              {pendingSync > 0 ? ` · ${pendingSync} ${lang === "rw" ? "bitaroherezwa" : "pending"}` : ""}
             </p>
           </div>
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={syncNow}
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-          >
-            <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Birabikwa…" : "Sync"}
-          </button>
+          <div className="flex shrink-0 flex-col gap-2">
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={syncNow}
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? (lang === "rw" ? "Birabikwa…" : "Syncing…") : "Sync"}
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await db.settings.put({ key: "cloudSyncMode", value: "auto" });
+                await db.settings.put({ key: "cloudSyncPromptDismissed", value: "1" });
+                toast.success(lang === "rw" ? "Auto-sync yatangiye." : "Auto-sync enabled.");
+                void fullSync().catch(() => {});
+              }}
+              className="inline-flex h-9 items-center justify-center rounded-full border border-primary/40 px-3 text-xs font-semibold text-primary"
+            >
+              Auto
+            </button>
+          </div>
         </section>
       )}
 
@@ -352,13 +395,13 @@ function SettingsPage() {
             <div className="mt-3 space-y-2 rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
               <p>
                 {lang === "rw"
-                  ? "Telefone gusa: isiba amakuru ari kuri iyi telefone gusa. Ayari kuri cloud arasigara kandi ashobora kugaruka wongera kwinjira."
-                  : "Phone only: clears this device but keeps cloud backup. That data can return when you sign in again."}
+                  ? "Telefone gusa: isiba amakuru y'iduka kuri iyi telefone. Konti yawe n'inyandiko zo kwinjira zisigara. Cloud irasigara."
+                  : "Phone only: clears shop data on this device. You stay signed in. Cloud backup is kept."}
               </p>
               <p>
                 {lang === "rw"
-                  ? "Telefone + cloud: bisaba internet na konti yinjiye. Niba cloud itasibwe neza, amakuru yo kuri telefone ntazasibwa."
-                  : "Phone + cloud: requires internet and an active sign-in. If cloud deletion fails, this phone will not be cleared."}
+                  ? "Telefone + cloud: isiba amakuru y'iduka hano no kuri cloud. Konti yawe irasigara yinjiye."
+                  : "Phone + cloud: clears shop data here and in the cloud. You stay signed in with an empty shop."}
               </p>
             </div>
             {busy && <p className="mt-2 text-center text-xs text-primary">{t("pleaseWait")}</p>}
