@@ -1,6 +1,7 @@
 /**
  * Offline-first sync: push Dexie → Supabase, pull Supabase → Dexie.
  * fullSync = push then force-pull (multi-device / same business account).
+ * checkRemoteAhead = lightweight “other phone has newer data” detector for the sync pill.
  */
 import { db } from "./db";
 import { ensureSupabase, supabaseConfigured } from "./supabase";
@@ -10,7 +11,6 @@ let again = false;
 let forceAgain = false;
 let syncPaused = false;
 
-/** Pause background/manual sync during destructive reset operations and wait for an active sync to finish. */
 export async function pauseSync(): Promise<() => void> {
   syncPaused = true;
   const active = running;
@@ -18,7 +18,7 @@ export async function pauseSync(): Promise<() => void> {
     try {
       await active;
     } catch {
-      // Reset must still proceed to report its own result.
+      /* */
     }
   }
   return () => {
@@ -26,15 +26,7 @@ export async function pauseSync(): Promise<() => void> {
   };
 }
 
-/**
- * Serialised sync. By default respects cloudSyncMode (auto only).
- * force: run even in manual mode (Settings button, post-login).
- */
-export function trySync(opts?: {
-  force?: boolean;
-  /** Push only — used internally */
-  pushOnly?: boolean;
-}): Promise<{ ok: boolean; reason?: string }> {
+export function trySync(opts?: { force?: boolean; pushOnly?: boolean }): Promise<{ ok: boolean; reason?: string }> {
   if (syncPaused) return Promise.resolve({ ok: false, reason: "reset_in_progress" });
   if (running) {
     again = true;
@@ -60,7 +52,6 @@ export function trySync(opts?: {
   return running;
 }
 
-/** Explicit push + force pull for Settings / login / auto interval. */
 export async function fullSync(): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
   if (syncPaused) return { ok: false, reason: "reset_in_progress" };
   if (running) {
@@ -86,20 +77,18 @@ async function doFullSync(): Promise<{ ok: boolean; reason?: string; pulled?: nu
     return push;
   }
 
-  // Only replace local with cloud when push succeeded (local is safely on server)
-  // or local shop is empty (first login / other phone).
   const localCount = await db.products.count();
   if (!push.ok && localCount > 0) {
-    console.warn("[sync] skip force-pull after failed push to keep local data", push.reason);
+    console.warn("[sync] skip force-pull after failed push", push.reason);
     return { ok: false, reason: push.reason };
   }
 
   const pull = await pullFromCloud({ force: true });
   if (!pull.ok) return { ok: false, reason: pull.reason ?? "pull_failed", pulled: pull.pulled };
+  await db.settings.put({ key: "lastFullSyncAt", value: String(Date.now()) });
   return { ok: true, pulled: pull.pulled };
 }
 
-/** Clear shop tables only (not settings/account) before loading another user's cloud data. */
 export async function clearShopTables() {
   await db.transaction(
     "rw",
@@ -116,14 +105,91 @@ export async function clearShopTables() {
   );
 }
 
-/**
- * Clear all shop data on this phone but KEEP account + session + sync preferences.
- * Used by Settings → "Phone only" reset.
- */
 export async function clearLocalShopKeepAccount() {
   await clearShopTables();
   await db.settings.delete("seeded");
   await db.settings.put({ key: "initialized", value: "1" });
+}
+
+/** Snapshot of local shop size for remote comparison. */
+async function localFingerprint() {
+  const [products, sales, debts, payments, parties] = await Promise.all([
+    db.products.toArray(),
+    db.sales.toArray(),
+    db.debts.toArray(),
+    db.payments.toArray(),
+    db.parties.toArray(),
+  ]);
+  const maxProduct = products.reduce((m, p) => Math.max(m, p.updatedAt || 0), 0);
+  const maxSale = sales.reduce((m, s) => Math.max(m, s.createdAt || 0), 0);
+  const maxDebt = debts.reduce((m, d) => Math.max(m, d.createdAt || 0), 0);
+  const maxPay = payments.reduce((m, p) => Math.max(m, p.createdAt || 0), 0);
+  return {
+    productCount: products.length,
+    saleCount: sales.length,
+    debtCount: debts.length,
+    paymentCount: payments.length,
+    partyCount: parties.length,
+    maxTs: Math.max(maxProduct, maxSale, maxDebt, maxPay),
+  };
+}
+
+/**
+ * Returns true when cloud has more rows or a newer timestamp than this phone.
+ * Used for the top “New changes — Sync” pill (manual mode, reconnect, lag behind auto).
+ */
+export async function checkRemoteAhead(): Promise<{ ahead: boolean; reason?: string }> {
+  if (!supabaseConfigured || !navigator.onLine) return { ahead: false, reason: "offline" };
+  const client = await ensureSupabase();
+  if (!client) return { ahead: false, reason: "not_configured" };
+
+  const { data: sess } = await client.auth.getSession();
+  const userId = sess.session?.user?.id;
+  if (!userId) return { ahead: false, reason: "no_session" };
+
+  try {
+    const local = await localFingerprint();
+    // Lightweight: only fetch ids + timestamps, not full rows
+    const [pr, sa, de, pa, pt] = await Promise.all([
+      client.from("products").select("local_id, updated_at").eq("user_id", userId),
+      client.from("sales").select("local_id, created_at").eq("user_id", userId),
+      client.from("debts").select("local_id, created_at").eq("user_id", userId),
+      client.from("payments").select("local_id, created_at").eq("user_id", userId),
+      client.from("parties").select("local_id, created_at").eq("user_id", userId),
+    ]);
+    if (pr.error || sa.error || de.error || pa.error || pt.error) {
+      return { ahead: false, reason: "query_error" };
+    }
+
+    const remoteProductCount = pr.data?.length ?? 0;
+    const remoteSaleCount = sa.data?.length ?? 0;
+    const remoteDebtCount = de.data?.length ?? 0;
+    const remotePayCount = pa.data?.length ?? 0;
+    const remotePartyCount = pt.data?.length ?? 0;
+
+    const remoteMax = Math.max(
+      ...(pr.data ?? []).map((r) => (r.updated_at ? new Date(r.updated_at).getTime() : 0)),
+      ...(sa.data ?? []).map((r) => (r.created_at ? new Date(r.created_at).getTime() : 0)),
+      ...(de.data ?? []).map((r) => (r.created_at ? new Date(r.created_at).getTime() : 0)),
+      ...(pa.data ?? []).map((r) => (r.created_at ? new Date(r.created_at).getTime() : 0)),
+      0,
+    );
+
+    const moreRows =
+      remoteProductCount > local.productCount ||
+      remoteSaleCount > local.saleCount ||
+      remoteDebtCount > local.debtCount ||
+      remotePayCount > local.paymentCount ||
+      remotePartyCount > local.partyCount;
+
+    // Cloud has newer activity (allow 5s skew)
+    const newer = remoteMax > local.maxTs + 5000;
+
+    return { ahead: moreRows || newer };
+  } catch (e) {
+    console.warn("[sync] checkRemoteAhead", e);
+    return { ahead: false, reason: String(e) };
+  }
 }
 
 async function doPush(): Promise<{ ok: boolean; reason?: string }> {
@@ -187,7 +253,7 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
   ]);
 
   for (const row of pending) {
-    const m = /^del:(products|debts):(\d+)$/.exec(row.op);
+    const m = /^del:(products|debts|parties):(\d+)$/.exec(row.op);
     if (!m) continue;
     const { error } = await client.from(m[1]!).delete().eq("user_id", userId).eq("local_id", Number(m[2]));
     if (error) return { ok: false, reason: error.message };
@@ -222,10 +288,7 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
       })),
       { onConflict: "user_id,local_id" },
     );
-    if (pe) {
-      console.warn("[sync] products", pe.message);
-      return { ok: false, reason: pe.message };
-    }
+    if (pe) return { ok: false, reason: pe.message };
   }
 
   if (parties.length) {
@@ -240,10 +303,7 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
       })),
       { onConflict: "user_id,local_id" },
     );
-    if (pae) {
-      console.warn("[sync] parties", pae.message);
-      return { ok: false, reason: pae.message };
-    }
+    if (pae) return { ok: false, reason: pae.message };
   }
 
   if (sales.length) {
@@ -264,10 +324,7 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
       })),
       { onConflict: "user_id,local_id" },
     );
-    if (se) {
-      console.warn("[sync] sales", se.message);
-      return { ok: false, reason: se.message };
-    }
+    if (se) return { ok: false, reason: se.message };
   }
 
   if (debts.length) {
@@ -280,6 +337,7 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
         amount: d.amount,
         created_at: new Date(d.createdAt).toISOString(),
         sale_local_id: d.saleId ?? null,
+        due_days: d.dueDays ?? null,
       })),
       { onConflict: "user_id,local_id" },
     );
@@ -321,11 +379,6 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
   return { ok: true };
 }
 
-/**
- * Download this user's shop from Supabase into Dexie.
- * force=true: clear local shop tables and replace (sign-in, multi-device, fullSync).
- * force=false: only pull when local shop is empty.
- */
 export async function pullFromCloud(opts?: {
   force?: boolean;
 }): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
@@ -420,6 +473,7 @@ export async function pullFromCloud(opts?: {
           amount: Number(d.amount),
           createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
           ...(d.sale_local_id != null ? { saleId: Number(d.sale_local_id) } : {}),
+          ...(d.due_days != null ? { dueDays: Number(d.due_days) } : {}),
         })),
       );
     }
