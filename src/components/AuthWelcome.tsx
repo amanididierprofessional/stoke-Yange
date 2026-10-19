@@ -1,21 +1,26 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
+  completePasswordRecovery,
   isLoggedIn,
+  isRecoveryHash,
   MIN_PASSWORD,
   recoverPassword,
-  completePasswordRecovery,
+  requestEmailOtp,
   signIn,
   signUp,
+  verifyEmailOtpAndSetPassword,
 } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type Mode = "login" | "signup" | "recover";
 type Step = 1 | 2;
+/** recover sub-steps for email OTP */
+type RecoverPhase = "identify" | "otp" | "link_password";
 
 export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const { t, lang } = useI18n();
@@ -32,21 +37,33 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [welcome, setWelcome] = useState(false);
   const [welcomeKind, setWelcomeKind] = useState<"login" | "signup" | "recover">("login");
-  const [recoveryMode, setRecoveryMode] = useState<"email" | "local">("email");
-  const [recoveryLinkOpened, setRecoveryLinkOpened] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState<"email" | "local" | "otp_sent">("email");
+  const [recoverPhase, setRecoverPhase] = useState<RecoverPhase>("identify");
+  const [otpCode, setOtpCode] = useState("");
   const [localRecoveryNeedsPassword, setLocalRecoveryNeedsPassword] = useState(false);
   const [recoverFailed, setRecoverFailed] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash.includes("type=recovery")) {
+    if (isRecoveryHash()) {
       setMode("recover");
       setStep(2);
-      setRecoveryLinkOpened(true);
+      setRecoverPhase("link_password");
       setOpen(true);
-      return;
     }
+
+    const { data: sub } = supabase?.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setMode("recover");
+        setStep(2);
+        setRecoverPhase("link_password");
+        setOpen(true);
+        setWelcome(false);
+      }
+    }) ?? { data: { subscription: { unsubscribe: () => {} } } };
+
     let cancelled = false;
     (async () => {
+      if (isRecoveryHash()) return;
       const logged = await isLoggedIn();
       if (cancelled) return;
       if (logged) {
@@ -59,6 +76,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     })();
     return () => {
       cancelled = true;
+      sub.subscription.unsubscribe();
     };
   }, [onAuthed]);
 
@@ -85,6 +103,9 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     setStep(1);
     setShowConfirm(false);
     setRecoverFailed(false);
+    setRecoverPhase("identify");
+    setOtpCode("");
+    setWelcome(false);
   };
   const goSignup = () => {
     setMode("signup");
@@ -98,9 +119,11 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     setPassword("");
     setFullName("");
     setBusiness("");
+    setOtpCode("");
     setRecoverFailed(false);
-    setRecoveryLinkOpened(false);
+    setRecoverPhase("identify");
     setLocalRecoveryNeedsPassword(false);
+    setWelcome(false);
   };
 
   const continueStep1 = async () => {
@@ -128,7 +151,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       } catch (error) {
         console.error("[auth-ui] sign in failed", error);
         setBusy(false);
-        toast.error("Could not finish signing in. Check your connection and try again.");
+        toast.error(lang === "rw" ? "Kwinjira byanze. Reba internet." : "Could not sign in. Check connection.");
         return;
       }
       setBusy(false);
@@ -139,20 +162,15 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           return;
         }
         if (res.error === "confirmation_required") {
-          toast.error(lang === "rw"
-            ? "Konti irasaba kwemeza email. Saba umuyobozi kuzimya email confirmation kugira ngo kwinjira ukoresheje telefone bikore."
-            : "Supabase requires email confirmation. Phone-based sign-in needs email confirmation disabled in Supabase Auth settings.");
+          toast.error(
+            lang === "rw"
+              ? "Konti irasaba kwemeza email. Muri Supabase Auth: zima Confirm email."
+              : "Email confirmation is required. Disable Confirm email in Supabase Auth.",
+          );
           return;
         }
         if (res.error === "cloud_unavailable") {
-          toast.error(lang === "rw"
-            ? "Serivisi yo kwinjira ntiboneka ubu. Reba internet wongere ugerageze."
-            : "Sign-in service is unavailable. Check your connection and try again.");
-          return;
-        }
-        if (res.error === "bad_password") {
-          toast.error(t("badLogin"));
-          toast.message(t("forgotPassword"));
+          toast.error(lang === "rw" ? "Serivisi ntiboneka." : "Sign-in service unavailable.");
           return;
         }
         toast.error(t("badLogin"));
@@ -216,20 +234,21 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           return;
         }
         if (res.error === "internet_required") {
-          toast.error(lang === "rw" ? "Ukeneye internet kugira ngo ufungure konti nshya." : "Connect to the internet to create your account.");
+          toast.error(lang === "rw" ? "Ukeneye internet." : "Internet required.");
           return;
         }
         if (res.error === "cloud_unavailable") {
-          toast.error(lang === "rw" ? "Konti ntishobora gufungurwa ubu. Reba internet hanyuma ugerageze nanone." : "Account creation is unavailable right now. Check your connection and try again.");
+          toast.error(lang === "rw" ? "Konti ntishobora gufungurwa." : "Could not create account.");
           return;
         }
         if (res.error === "confirmation_required") {
-          toast.error(lang === "rw"
-            ? "Konti yarakozwe ariko isaba kwemeza email. Kugira ngo kwinjira ukoresheje telefone bikore, email confirmation igomba kuzimwa muri Supabase Auth."
-            : "The account was created, but Supabase requires email confirmation. Disable email confirmation in Supabase Auth for phone-based sign-in.");
+          toast.error(
+            lang === "rw"
+              ? "Zima email confirmation muri Supabase Auth."
+              : "Disable email confirmation in Supabase Auth.",
+          );
           return;
         }
-        // Never show "Wrong phone/email or password" on signup
         toast.error(t("signupFailed"));
         return;
       }
@@ -237,16 +256,15 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       setWelcome(true);
     } catch (error) {
       console.error("[auth-ui] sign up failed", error);
-      toast.error(lang === "rw"
-        ? "Konti ntishobora gufungurwa ubu. Reba internet wongere ugerageze."
-        : "Couldn't create the account. Check your connection and try again.");
+      toast.error(lang === "rw" ? "Konti ntishobora gufungurwa." : "Couldn't create the account.");
     } finally {
       setBusy(false);
     }
   };
 
   const submitRecover = async () => {
-    if (recoveryLinkOpened) {
+    // Recovery link from email → set new password
+    if (recoverPhase === "link_password") {
       if (password.length < MIN_PASSWORD) {
         toast.error(t("passwordMin"));
         return;
@@ -255,18 +273,95 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       const result = await completePasswordRecovery(password);
       setBusy(false);
       if (!result.ok) {
-        toast.error(lang === "rw" ? "Ijambo ry'ibanga ntiryahinduwe. Ongera ugerageze cyangwa utwandikire." : "Password could not be changed. Try again or contact support.");
+        toast.error(lang === "rw" ? "Ijambo ntiryahinduwe." : "Password could not be changed.");
         setRecoverFailed(true);
         return;
       }
-      setRecoveryLinkOpened(false);
+      try {
+        history.replaceState(null, "", window.location.pathname);
+      } catch {
+        /* */
+      }
       setWelcomeKind("recover");
       setRecoveryMode("local");
       setWelcome(true);
       return;
     }
-    if (!identifier.trim() || !fullName.trim() || !business.trim()) {
-      toast.error(lang === "rw" ? "Uzuza telefone cyangwa email, amazina yawe n'izina ry'iduka." : "Enter your phone or email, your full name, and your business name.");
+
+    // Email OTP: user entered code + new password
+    if (recoverPhase === "otp" && tab === "email") {
+      if (otpCode.trim().length < 4) {
+        toast.error(lang === "rw" ? "Andika kode yo muri email." : "Enter the code from your email.");
+        return;
+      }
+      if (password.length < MIN_PASSWORD) {
+        toast.error(t("passwordMin"));
+        return;
+      }
+      setBusy(true);
+      const res = await verifyEmailOtpAndSetPassword({
+        email: identifier,
+        token: otpCode,
+        newPassword: password,
+      });
+      setBusy(false);
+      if (!res.ok) {
+        if (res.error === "bad_code") {
+          toast.error(lang === "rw" ? "Kode ntabwo ariyo cyangwa yararenze." : "Wrong or expired code.");
+        } else if (res.error === "password_short") {
+          toast.error(t("passwordMin"));
+        } else {
+          toast.error(lang === "rw" ? "Byanze. Ongera ugerageze." : "Could not reset password.");
+        }
+        setRecoverFailed(true);
+        return;
+      }
+      setWelcomeKind("recover");
+      setRecoveryMode("local");
+      setWelcome(true);
+      return;
+    }
+
+    // Identify phase
+    if (!identifier.trim()) {
+      toast.error(tab === "phone" ? t("phone") : t("email"));
+      return;
+    }
+
+    if (tab === "email") {
+      setBusy(true);
+      const sent = await requestEmailOtp(identifier);
+      setBusy(false);
+      if (!sent.ok) {
+        toast.error(
+          sent.error === "internet_required"
+            ? lang === "rw"
+              ? "Ukeneye internet."
+              : "Connect to the internet."
+            : lang === "rw"
+              ? "Ntidushoboye kohereza kode. Reba email cyangwa twandikire."
+              : "Could not send a code. Check the email or contact support.",
+        );
+        setRecoverFailed(true);
+        return;
+      }
+      setRecoverPhase("otp");
+      setRecoveryMode("otp_sent");
+      toast.success(
+        lang === "rw"
+          ? "Reba email yawe — twakohereje kode cyangwa link."
+          : "Check your email — we sent a code or recovery link.",
+      );
+      return;
+    }
+
+    // Phone recovery
+    if (!fullName.trim() || !business.trim()) {
+      toast.error(
+        lang === "rw"
+          ? "Andika amazina n'izina ry'iduka."
+          : "Enter your full name and business name.",
+      );
       return;
     }
     if (localRecoveryNeedsPassword && password.length < MIN_PASSWORD) {
@@ -275,7 +370,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     }
     setBusy(true);
     const res = await recoverPassword({
-      loginType: tab,
+      loginType: "phone",
       identifier,
       fullName,
       businessName: business,
@@ -285,24 +380,36 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     if (!res.ok) {
       if (res.error === "password_short") {
         setLocalRecoveryNeedsPassword(true);
-        setRecoverFailed(false);
-        toast.message(lang === "rw" ? "Andika ijambo ry'ibanga rishya kugira ngo ukomeze." : "Enter a new password to continue.");
-        setPassword("");
+        toast.message(lang === "rw" ? "Andika ijambo ry'ibanga rishya." : "Enter a new password.");
         return;
       }
-      const message = res.error === "phone_support"
-        ? (lang === "rw" ? "Kugarura konti ukoresheje telefone bisaba ubufasha bwacu. Twandikire kuri telefoni cyangwa WhatsApp." : "Phone-based account recovery needs our support. Contact us by phone or WhatsApp.")
-        : res.error === "internet_required"
-          ? (lang === "rw" ? "Ukeneye internet kugira ngo ugarure konti." : "Connect to the internet to recover your account.")
-          : t("verifyFail");
-      toast.error(message);
+      if (res.error === "phone_support") {
+        toast.error(
+          lang === "rw"
+            ? "Kugarura konti ya telefone bisaba ubufasha. Twandikire kuri WhatsApp."
+            : "Phone account recovery needs support. Contact us on WhatsApp.",
+        );
+        setRecoverFailed(true);
+        return;
+      }
+      toast.error(t("verifyFail"));
       setRecoverFailed(true);
       return;
     }
-    setRecoverFailed(false);
-    setRecoveryMode(res.mode);
+    setRecoveryMode(res.mode === "otp_sent" ? "otp_sent" : res.mode);
     setWelcomeKind("recover");
     setWelcome(true);
+  };
+
+  const finishWelcome = () => {
+    if (welcomeKind === "recover") {
+      setWelcome(false);
+      goLogin();
+      setPassword("");
+      return;
+    }
+    setOpen(false);
+    onAuthed?.();
   };
 
   return (
@@ -324,33 +431,73 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           <div className="mb-4 text-center">
             <BrandLogo className="mx-auto mb-3 size-16 rounded-2xl" />
             <h2 className="text-lg font-bold">
-              {welcome ? (welcomeKind === "signup" ? (lang === "rw" ? "Kwiyandikisha byakunze" : "Registration successful") : welcomeKind === "recover" ? (lang === "rw" ? "Reba ubutumwa bwawe" : "Check your recovery instructions") : (lang === "rw" ? "Kwinjira byakunze" : "Sign-in successful")) : mode === "recover" ? t("recoverTitle") : mode === "login" ? t("signIn") : (mode === "signup" && step === 1 ? (lang === "rw" ? "Murakaza neza" : "Welcome") : t("signUp"))}
+              {welcome
+                ? welcomeKind === "signup"
+                  ? lang === "rw"
+                    ? "Kwiyandikisha byakunze"
+                    : "Registration successful"
+                  : welcomeKind === "recover"
+                    ? lang === "rw"
+                      ? "Byakunze"
+                      : "Recovery done"
+                    : lang === "rw"
+                      ? "Kwinjira byakunze"
+                      : "Sign-in successful"
+                : mode === "recover"
+                  ? t("recoverTitle")
+                  : mode === "login"
+                    ? t("signIn")
+                    : mode === "signup" && step === 1
+                      ? lang === "rw"
+                        ? "Murakaza neza"
+                        : "Welcome"
+                      : t("signUp")}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {welcome ? (welcomeKind === "signup" ? (lang === "rw" ? "Konti yawe yakozwe neza." : "Your account has been created.") : welcomeKind === "recover" ? (recoveryMode === "email" ? (lang === "rw" ? "Twakohereje ubutumwa kuri email yawe. Fungura email ukurikize amabwiriza yo guhindura ijambo ry'ibanga." : "We sent a recovery link to your email. Open it and follow the instructions to change your password.") : (lang === "rw" ? "Ijambo ry'ibanga kuri iki gikoresho ryavuguruwe. Injira ukoresheje irishya." : "The password on this device was updated. Sign in with the new password.")) : (lang === "rw" ? "Wakiriye neza. Ushobora gukomeza." : "You are signed in and ready to continue.")) : mode === "login" ? t("loginHint") : mode === "signup" ? t("signupHint") : t("recoverHint")}
+              {welcome
+                ? welcomeKind === "recover"
+                  ? recoveryMode === "otp_sent"
+                    ? lang === "rw"
+                      ? "Reba email."
+                      : "Check your email."
+                    : lang === "rw"
+                      ? "Ijambo ry'ibanga ryavuguruwe. Injira ukoresheje irishya."
+                      : "Password updated. Sign in with the new password."
+                  : welcomeKind === "signup"
+                    ? lang === "rw"
+                      ? "Konti yawe yakozwe neza."
+                      : "Your account has been created."
+                    : lang === "rw"
+                      ? "Wakiriye neza."
+                      : "You are signed in."
+                : mode === "login"
+                  ? t("loginHint")
+                  : mode === "signup"
+                    ? t("signupHint")
+                    : recoverPhase === "otp"
+                      ? lang === "rw"
+                        ? "Andika kode yo muri email n'ijambo rishya."
+                        : "Enter the email code and your new password."
+                      : recoverPhase === "link_password"
+                        ? lang === "rw"
+                          ? "Hitamo ijambo ry'ibanga rishya."
+                          : "Choose a new password."
+                        : t("recoverHint")}
             </p>
           </div>
 
+          {welcome && (
+            <button type="button" onClick={finishWelcome} className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">
+              {welcomeKind === "recover" ? t("signIn") : lang === "rw" ? "Komeza" : "Continue"}
+            </button>
+          )}
+
           {!welcome && mode !== "recover" && (
             <div className="mb-4 grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
-              <button
-                type="button"
-                onClick={goLogin}
-                className={cn(
-                  "h-11 rounded-full text-sm font-bold transition-colors",
-                  mode === "login" ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground",
-                )}
-              >
+              <button type="button" onClick={goLogin} className={cn("h-11 rounded-full text-sm font-bold", mode === "login" ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground")}>
                 {t("signIn")}
               </button>
-              <button
-                type="button"
-                onClick={goSignup}
-                className={cn(
-                  "h-11 rounded-full text-sm font-bold transition-colors",
-                  mode === "signup" ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground",
-                )}
-              >
+              <button type="button" onClick={goSignup} className={cn("h-11 rounded-full text-sm font-bold", mode === "signup" ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground")}>
                 {t("signUp")}
               </button>
             </div>
@@ -360,54 +507,18 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
                 {(["phone", "email"] as const).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setTab(k)}
-                    className={cn(
-                      "h-10 rounded-full text-sm font-semibold",
-                      tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground",
-                    )}
-                  >
+                  <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>
                     {k === "phone" ? t("phone") : t("email")}
                   </button>
                 ))}
               </div>
-              <Input
-                type={tab === "email" ? "email" : "tel"}
-                inputMode={tab === "email" ? "email" : "tel"}
-                placeholder={tab === "phone" ? t("phone") : t("email")}
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                className="h-12 rounded-xl"
-              />
-              <Input
-                type="password"
-                placeholder={`${t("password")} (min ${MIN_PASSWORD})`}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-12 rounded-xl"
-              />
+              <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
+              <Input type="password" placeholder={`${t("password")} (min ${MIN_PASSWORD})`} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
               {mode === "signup" && showConfirm && (
-                <Input
-                  type="password"
-                  placeholder={t("reenterPassword")}
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  className="h-12 rounded-xl"
-                  autoFocus
-                />
+                <Input type="password" placeholder={t("reenterPassword")} value={confirm} onChange={(e) => setConfirm(e.target.value)} className="h-12 rounded-xl" autoFocus />
               )}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={mode === "signup" ? submitProfile : continueStep1}
-                className={cn(
-                  "h-12 w-full rounded-full font-semibold text-primary-foreground transition-colors",
-                  welcome ? "bg-success" : "bg-primary",
-                )}
-              >
-                {busy ? (lang === "rw" ? "Birimo kwinjira…" : "Please wait…") : mode === "login" ? t("signIn") : (lang === "rw" ? "Fungura konti" : "Create account")}
+              <button type="button" disabled={busy} onClick={mode === "signup" ? submitProfile : continueStep1} className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">
+                {busy ? t("pleaseWait") : mode === "login" ? t("signIn") : lang === "rw" ? "Fungura konti" : "Create account"}
               </button>
               {mode === "login" && !busy && (
                 <button type="button" className="w-full text-center text-xs font-medium text-primary" onClick={goRecover}>
@@ -417,75 +528,87 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             </div>
           )}
 
-          {((mode === "signup" && step === 1) || mode === "recover") && !welcome && (
+          {mode === "signup" && step === 1 && !welcome && (
             <div className="space-y-3">
-              {mode === "signup" && <>
-                <p className="text-sm leading-relaxed text-muted-foreground">{lang === "rw" ? "Kuva uyu munsi, ububiko bw'iduka ryawe uzajya ubufata kuri telefone yawe." : "From today, your stock will be right on your phone."}</p>
-                <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
-                <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
-              </>}
-              {mode === "recover" && <>
-                {recoveryLinkOpened ? (
-                  <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
-                ) : <>
-                  <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
-                    {(["phone", "email"] as const).map((k) => <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>{k === "phone" ? t("phone") : t("email")}</button>)}
-                  </div>
-                  <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
-                  <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
-                  <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
-                  {localRecoveryNeedsPassword && <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />}
-                </>}
-              </>}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={mode === "recover" ? submitRecover : continueStep1}
-                className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground"
-              >
-                {busy
-                  ? (mode === "recover"
-                    ? (lang === "rw" ? "Birimo kuvugurura..." : "Working…")
-                    : (lang === "rw" ? "Birimo gufungura konti..." : "Creating account…"))
-                  : t("submit")}
+              <p className="text-sm text-muted-foreground">
+                {lang === "rw" ? "Kuva uyu munsi, ububiko bw'iduka ryawe uzajya ubufata kuri telefone yawe." : "From today, your stock will be right on your phone."}
+              </p>
+              <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
+              <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
+              <button type="button" disabled={busy} onClick={continueStep1} className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">
+                {t("continue")}
               </button>
-              {mode === "recover" && (
-                <button type="button" className="w-full text-xs text-muted-foreground" onClick={goLogin}>
-                  {t("signIn")}
-                </button>
-              )}
-              {recoverFailed && (
-                <p className="pt-1 text-center text-[11px] text-muted-foreground">
-                  {t("contactDev")}{" "}
-                  <a href="tel:0796919900" className="underline">
-                    0796919900
-                  </a>
-                  {" · "}
-                  <a href="https://wa.me/250796919900" target="_blank" rel="noreferrer" className="underline">
-                    WhatsApp
-                  </a>
-                </p>
-              )}
             </div>
           )}
 
-          {welcome && (
-            <div className="flex flex-col items-center gap-3 py-5" role="status" aria-live="polite">
-              <div className="rounded-full bg-orange-50 p-4 text-orange-500 animate-in zoom-in duration-500"><CheckCircle2 className="size-14 stroke-[2.5]" /></div>
-              <p className="text-center text-sm text-muted-foreground">{welcomeKind === "signup" ? (lang === "rw" ? "Konti yawe ya Stoke Yange iriteguye." : "Your Stoke Yange account is ready.") : welcomeKind === "recover" ? (lang === "rw" ? "Kurikiza amabwiriza yo kugarura konti." : "Follow the recovery instructions.") : (lang === "rw" ? "Ubu ushobora gukomeza gukoresha iduka ryawe." : "You can now continue to your shop.")}</p>
-              <button type="button" onClick={() => {
-                if (welcomeKind === "recover") {
-                  setWelcome(false);
-                  setMode("login");
-                  setStep(1);
-                  setPassword("");
-                  setConfirm("");
-                  setShowConfirm(false);
-                  return;
-                }
-                setOpen(false);
-                onAuthed?.();
-              }} className="mt-2 h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">{lang === "rw" ? "Mukomeze" : "Continue"}</button>
+          {mode === "recover" && !welcome && (
+            <div className="space-y-3">
+              {recoverPhase === "link_password" && (
+                <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+              )}
+
+              {recoverPhase === "otp" && (
+                <>
+                  <Input inputMode="numeric" placeholder={lang === "rw" ? "Kode (OTP)" : "Code (OTP)"} value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 8))} className="h-12 rounded-xl tracking-widest" />
+                  <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+                  <button type="button" className="text-xs font-medium text-primary" onClick={() => void requestEmailOtp(identifier).then((r) => r.ok && toast.success(lang === "rw" ? "Kode yongera koherezwa." : "Code resent."))}>
+                    {lang === "rw" ? "Ongera wohereze kode" : "Resend code"}
+                  </button>
+                </>
+              )}
+
+              {recoverPhase === "identify" && (
+                <>
+                  <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1">
+                    {(["phone", "email"] as const).map((k) => (
+                      <button key={k} type="button" onClick={() => setTab(k)} className={cn("h-10 rounded-full text-sm font-semibold", tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground")}>
+                        {k === "phone" ? t("phone") : t("email")}
+                      </button>
+                    ))}
+                  </div>
+                  <Input type={tab === "email" ? "email" : "tel"} inputMode={tab === "email" ? "email" : "tel"} placeholder={tab === "phone" ? t("phone") : t("email")} value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="h-12 rounded-xl" />
+                  {tab === "phone" && (
+                    <>
+                      <Input placeholder={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12 rounded-xl" />
+                      <Input placeholder={t("businessName")} value={business} onChange={(e) => setBusiness(e.target.value)} className="h-12 rounded-xl" />
+                      {localRecoveryNeedsPassword && (
+                        <Input type="password" placeholder={t("newPassword")} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl" />
+                      )}
+                    </>
+                  )}
+                  {tab === "email" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {lang === "rw"
+                        ? "Tuzakohereza kode cyangwa link kuri email yawe."
+                        : "We will email you a one-time code or a recovery link."}
+                    </p>
+                  )}
+                </>
+              )}
+
+              <button type="button" disabled={busy} onClick={submitRecover} className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">
+                {busy
+                  ? t("pleaseWait")
+                  : recoverPhase === "otp" || recoverPhase === "link_password"
+                    ? lang === "rw"
+                      ? "Bika ijambo rishya"
+                      : "Save new password"
+                    : tab === "email"
+                      ? lang === "rw"
+                        ? "Ohereza kode"
+                        : "Send code"
+                      : t("submit")}
+              </button>
+
+              {recoverFailed && tab === "phone" && (
+                <a href="https://wa.me/250796919900?text=Password%20recovery%20help" target="_blank" rel="noreferrer" className="block text-center text-xs font-semibold text-[#128C7E]">
+                  WhatsApp support
+                </a>
+              )}
+
+              <button type="button" className="w-full text-center text-xs text-muted-foreground" onClick={goLogin}>
+                {t("needLogin")}
+              </button>
             </div>
           )}
         </div>
@@ -493,4 +616,3 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
     </div>
   );
 }
-
