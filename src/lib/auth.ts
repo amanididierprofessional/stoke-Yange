@@ -1,11 +1,6 @@
 /**
  * Auth: local (IndexedDB) offline + Supabase Auth when online.
- * Sign-up ALWAYS saves locally; cloud errors never block creating the shop account
- * except "user already registered" → tell them to sign in.
- * Passwords: auth.users only (never profiles).
- *
- * Sign-in (online): verifies password against Supabase Auth, then loads THAT user's
- * shop from the database (not whatever was left on the phone).
+ * Recovery: email OTP (6-digit) or recovery link; phone = local verify or support.
  */
 import { db, factoryReset } from "./db";
 import { ensureSupabase, supabase, supabaseConfigured } from "./supabase";
@@ -24,7 +19,6 @@ export type Account = {
 
 const KEY = "account";
 const SESSION = "sy-session";
-/** Supabase default minimum */
 export const MIN_PASSWORD = 6;
 
 async function sha256(text: string): Promise<string> {
@@ -42,7 +36,6 @@ function normalizeId(type: "phone" | "email", id: string) {
   return type === "phone" ? normalizePhone(id) : id.trim().toLowerCase();
 }
 
-/** Valid-looking email for phone logins (Supabase rejects some .local domains). */
 export function syntheticEmail(phone: string) {
   const digits = normalizePhone(phone);
   return `p${digits}@stokeyange.user`;
@@ -145,18 +138,13 @@ export async function signUp(opts: {
       if (error) {
         const msg = error.message || "";
         console.warn("[auth] signup cloud", msg);
-        if (/already|registered|exists/i.test(msg)) {
-          return { ok: false, error: "exists" };
-        }
-        if (/password/i.test(msg) && /6|least|characters/i.test(msg)) {
-          return { ok: false, error: "password_short" };
-        }
+        if (/already|registered|exists/i.test(msg)) return { ok: false, error: "exists" };
+        if (/password/i.test(msg) && /6|least|characters/i.test(msg)) return { ok: false, error: "password_short" };
         cloudBlocked = true;
       } else {
         if (!data.session) {
           const sign = await client.auth.signInWithPassword({ email, password: opts.password });
           if (sign.error) {
-            console.warn("[auth] post-signup signin", sign.error.message);
             if (/email not confirmed|confirm your email/i.test(sign.error.message)) {
               return { ok: false, error: "confirmation_required" };
             }
@@ -168,7 +156,7 @@ export async function signUp(opts: {
         if (!uid) cloudBlocked = true;
         if (uid) {
           account.supabaseUserId = uid;
-          const { error: pe } = await client.from("profiles").upsert({
+          await client.from("profiles").upsert({
             id: uid,
             shop_name: account.businessName,
             full_name: account.fullName,
@@ -177,7 +165,6 @@ export async function signUp(opts: {
             email: opts.loginType === "email" ? id : email,
             updated_at: new Date().toISOString(),
           });
-          if (pe) console.warn("[auth] profile upsert", pe.message);
         }
       }
     } catch (e) {
@@ -196,9 +183,7 @@ export async function signUp(opts: {
   }
   await saveAccount(account);
   setLoggedIn(true);
-  // New account: push profile + any seed; pull (usually empty)
   fullSync().catch(() => trySync({ force: true }).catch(() => {}));
-
   return { ok: true };
 }
 
@@ -213,11 +198,9 @@ export async function signIn(opts: {
   const client = await ensureSupabase();
   const email = opts.loginType === "email" ? id : syntheticEmail(id);
 
-  // 1) Cloud first when online — password checked against auth.users
   if (supabaseConfigured && client && navigator.onLine) {
     const { data, error } = await client.auth.signInWithPassword({ email, password: opts.password });
     if (error) {
-      console.warn("[auth] cloud signin", error.message);
       if (/email not confirmed|confirm your email/i.test(error.message)) {
         return { ok: false, error: "confirmation_required" };
       }
@@ -233,10 +216,7 @@ export async function signIn(opts: {
         (prev.supabaseUserId === uid ||
           (prev.loginType === opts.loginType && prev.identifier === id));
 
-      // Different account than what's on this phone → drop local shop data
-      if (!sameUser) {
-        await clearShopTables();
-      }
+      if (!sameUser) await clearShopTables();
 
       const passwordHash = await sha256(opts.password);
       let account: Account = {
@@ -252,32 +232,21 @@ export async function signIn(opts: {
       account = await applyProfileFromCloud(account, uid, data.session.user.email);
       setLoggedIn(true);
 
-      // Always bidirectional: push local changes, then force-pull cloud shop.
-      // Same account on phone 2 / after logout gets the latest shared data.
       const syncResult = await fullSync().catch((e) => {
         console.warn("[auth] fullSync", e);
         return { ok: false as const, reason: String(e) };
       });
       if (!syncResult.ok) {
-        // Fallback: at least try pull so empty phones get data
-        const pull = await pullFromCloud({ force: true }).catch((e) => {
-          console.warn("[auth] pull fallback", e);
-          return { ok: false as const, reason: String(e) };
-        });
-        console.info("[auth] pullFromCloud fallback", pull);
-      } else {
-        console.info("[auth] fullSync ok", syncResult);
+        await pullFromCloud({ force: true }).catch(() => {});
       }
       return { ok: true };
     }
   }
 
-  // Online + Supabase configured: wrong password / unknown user → do not fall back to local
   if (supabaseConfigured && client && navigator.onLine) {
     return { ok: false, error: "bad_password" };
   }
 
-  // 2) Offline / no cloud: local password only
   const account = await getAccount();
   if (!account) return { ok: false, error: "no_account" };
   if (account.loginType !== opts.loginType || account.identifier !== id) {
@@ -290,43 +259,142 @@ export async function signIn(opts: {
   return { ok: true };
 }
 
+/** Send 6-digit email OTP (Supabase email magic/OTP). Requires Email OTP enabled in Supabase. */
+export async function requestEmailOtp(
+  emailRaw: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const email = emailRaw.trim().toLowerCase();
+  if (!email || !email.includes("@")) return { ok: false, error: "identifier" };
+  const client = await ensureSupabase();
+  if (!client || !supabaseConfigured || !navigator.onLine) {
+    return { ok: false, error: "internet_required" };
+  }
+  const { error } = await client.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: false,
+    },
+  });
+  if (error) {
+    console.warn("[auth] email otp", error.message);
+    // Fallback: recovery link email
+    const { error: e2 } = await client.auth.resetPasswordForEmail(email, {
+      redirectTo: typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
+    });
+    if (e2) {
+      console.warn("[auth] reset link", e2.message);
+      return { ok: false, error: "recovery_unavailable" };
+    }
+    return { ok: true };
+  }
+  return { ok: true };
+}
+
+/** Verify email OTP then set a new password (user is temporarily signed in). */
+export async function verifyEmailOtpAndSetPassword(opts: {
+  email: string;
+  token: string;
+  newPassword: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const email = opts.email.trim().toLowerCase();
+  const token = opts.token.trim().replace(/\s/g, "");
+  if (!email || token.length < 4) return { ok: false, error: "bad_code" };
+  if (opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
+
+  const client = await ensureSupabase();
+  if (!client || !supabaseConfigured || !navigator.onLine) {
+    return { ok: false, error: "internet_required" };
+  }
+
+  const { data, error } = await client.auth.verifyOtp({
+    email,
+    token,
+    type: "email",
+  });
+  if (error || !data.session) {
+    // Try recovery type (from reset link flow codes if any)
+    const second = await client.auth.verifyOtp({
+      email,
+      token,
+      type: "recovery",
+    });
+    if (second.error || !second.data.session) {
+      console.warn("[auth] verify otp", error?.message || second.error?.message);
+      return { ok: false, error: "bad_code" };
+    }
+  }
+
+  const { error: upErr } = await client.auth.updateUser({ password: opts.newPassword });
+  if (upErr) {
+    console.warn("[auth] update password after otp", upErr.message);
+    return { ok: false, error: "recovery_unavailable" };
+  }
+
+  const account = await getAccount();
+  if (account && account.loginType === "email" && account.identifier === email) {
+    account.passwordHash = await sha256(opts.newPassword);
+    await saveAccount(account);
+  }
+  // Sign out recovery session — user must sign in with new password
+  try {
+    await client.auth.signOut({ scope: "local" });
+  } catch {
+    /* */
+  }
+  setLoggedIn(false);
+  return { ok: true };
+}
+
 export async function recoverPassword(opts: {
   loginType: "phone" | "email";
   identifier: string;
   fullName: string;
   businessName: string;
   newPassword?: string;
-}): Promise<{ ok: true; mode: "email" | "local" } | { ok: false; error: string }> {
+}): Promise<{ ok: true; mode: "email" | "local" | "otp_sent" } | { ok: false; error: string }> {
   const id = normalizeId(opts.loginType, opts.identifier);
   if (!id) return { ok: false, error: "verify_fail" };
 
   const client = await ensureSupabase();
 
-  // Cloud accounts must use Supabase's actual recovery flow.
-  if (supabaseConfigured && client && navigator.onLine) {
-    if (opts.loginType !== "email") {
-      return { ok: false, error: "phone_support" };
-    }
-    const account = await getAccount();
-    if (
-      account &&
-      (account.loginType !== "email" ||
-        account.identifier !== id ||
-        account.fullName.trim().toLowerCase() !== opts.fullName.trim().toLowerCase() ||
-        account.businessName.trim().toLowerCase() !== opts.businessName.trim().toLowerCase())
-    ) {
-      return { ok: false, error: "verify_fail" };
-    }
-    const { error } = await client.auth.resetPasswordForEmail(id, {
-      redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-    });
-    if (error) {
-      console.warn("[auth] password reset request", error.message);
-      return { ok: false, error: "recovery_unavailable" };
-    }
-    return { ok: true, mode: "email" };
+  // Email + online → send OTP / recovery email
+  if (opts.loginType === "email" && supabaseConfigured && client && navigator.onLine) {
+    const sent = await requestEmailOtp(id);
+    if (!sent.ok) return { ok: false, error: sent.error };
+    return { ok: true, mode: "otp_sent" };
   }
 
+  // Phone + online without local match → needs support (no SMS provider yet)
+  if (opts.loginType === "phone" && supabaseConfigured && client && navigator.onLine) {
+    const account = await getAccount();
+    const match =
+      account &&
+      account.loginType === "phone" &&
+      account.identifier === id &&
+      account.fullName.trim().toLowerCase() === opts.fullName.trim().toLowerCase() &&
+      account.businessName.trim().toLowerCase() === opts.businessName.trim().toLowerCase();
+    if (match) {
+      if (!opts.newPassword || opts.newPassword.length < MIN_PASSWORD) {
+        return { ok: false, error: "password_short" };
+      }
+      // Update local hash; try cloud password update only if already signed in as this user
+      account.passwordHash = await sha256(opts.newPassword);
+      await saveAccount(account);
+      try {
+        const { data: sess } = await client.auth.getSession();
+        if (sess.session?.user) {
+          await client.auth.updateUser({ password: opts.newPassword });
+        }
+      } catch {
+        /* cloud password may stay old until they use support / email path */
+      }
+      setLoggedIn(false);
+      return { ok: true, mode: "local" };
+    }
+    return { ok: false, error: "phone_support" };
+  }
+
+  // Offline / local-only recovery on this device
   if (!opts.newPassword || opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
   const account = await getAccount();
   if (!account) return { ok: false, error: navigator.onLine ? "no_account" : "internet_required" };
@@ -361,22 +429,34 @@ export async function completePasswordRecovery(
     account.passwordHash = await sha256(newPassword);
     await saveAccount(account);
   }
+  try {
+    await client.auth.signOut({ scope: "local" });
+  } catch {
+    /* */
+  }
   setLoggedIn(false);
   return { ok: true };
+}
+
+/** True if URL/hash indicates a Supabase recovery session. */
+export function isRecoveryHash(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hash || "";
+  const s = window.location.search || "";
+  return h.includes("type=recovery") || s.includes("type=recovery") || h.includes("type=signup");
 }
 
 export function clearSessionOnly() {
   setLoggedIn(false);
 }
 
-/** Logout: clear session + local shop + account on this phone (cloud kept). */
 export async function signOutLocal() {
   setLoggedIn(false);
   if (supabase) {
     try {
       await supabase.auth.signOut({ scope: "local" });
     } catch {
-      // Clear local app data even if the local auth session is already invalid.
+      /* */
     }
   }
   await factoryReset(false);
@@ -391,18 +471,17 @@ export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }>
   const sb = supabase;
   const run = async (): Promise<{ ok: boolean; reason?: string }> => {
     try {
-      const supabase = sb;
-      const { data } = await supabase.auth.getSession();
+      const { data } = await sb.auth.getSession();
       const uid = data.session?.user?.id;
       if (!uid) return { ok: false, reason: "no_session" };
       const deletions = [
-        await supabase.from("movements").delete().eq("user_id", uid),
-        await supabase.from("payments").delete().eq("user_id", uid),
-        await supabase.from("debts").delete().eq("user_id", uid),
-        await supabase.from("sales").delete().eq("user_id", uid),
-        await supabase.from("parties").delete().eq("user_id", uid),
-        await supabase.from("products").delete().eq("user_id", uid),
-        await supabase.from("profiles").delete().eq("id", uid),
+        await sb.from("movements").delete().eq("user_id", uid),
+        await sb.from("payments").delete().eq("user_id", uid),
+        await sb.from("debts").delete().eq("user_id", uid),
+        await sb.from("sales").delete().eq("user_id", uid),
+        await sb.from("parties").delete().eq("user_id", uid),
+        await sb.from("products").delete().eq("user_id", uid),
+        await sb.from("profiles").delete().eq("id", uid),
       ];
       const failed = deletions.find((result) => result.error);
       if (failed?.error) return { ok: false, reason: failed.error.message };
