@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useEffect, useState } from "react";
-import { ChevronDown, MessageCircle, MessageSquare, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, MessageCircle, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { db, type Party, type PartyKind } from "@/lib/db";
-import { addDebt, addParty, fmt, recordPayment } from "@/lib/actions";
+import { addDebt, addParty, deleteParty, fmt, recordPayment, updateParty } from "@/lib/actions";
 import { reminderText, useI18n } from "@/lib/i18n";
 import { useShopName } from "@/components/AppShell";
 import { cn } from "@/lib/utils";
@@ -16,10 +16,6 @@ export const Route = createFileRoute("/credit")({
     meta: [
       { title: "Credit (Amadeni) — Stoke Yange" },
       { name: "description", content: "Track who owes you and which suppliers you owe." },
-      { property: "og:title", content: "Credit — Stoke Yange" },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { property: "og:description", content: "Track who owes you and which suppliers you owe." },
     ],
   }),
   component: CreditPage,
@@ -34,7 +30,12 @@ function CreditPage() {
   const [kind, setKind] = useState<PartyKind>("customer");
   const [openId, setOpenId] = useState<number | null>(null);
   const [payFor, setPayFor] = useState<Party | null>(null);
+  const [debtFor, setDebtFor] = useState<Party | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editParty, setEditParty] = useState<Party | null>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [histOpen, setHistOpen] = useState<Record<number, boolean>>({});
+  const longTimer = useRef<number | null>(null);
 
   const data =
     useLiveQuery(async () => {
@@ -60,6 +61,17 @@ function CreditPage() {
     const msg = encodeURIComponent(reminderText(lang, r.p.name, fmt(r.balance), shop));
     const phone = r.p.phone.replace(/\D/g, "").replace(/^0/, "250");
     window.open(via === "wa" ? `https://wa.me/${phone}?text=${msg}` : `sms:+${phone}?body=${msg}`, "_blank");
+  };
+
+  const startLongPress = (id: number) => {
+    if (longTimer.current) window.clearTimeout(longTimer.current);
+    longTimer.current = window.setTimeout(() => setDeleteId(id), 480);
+  };
+  const endLongPress = () => {
+    if (longTimer.current) {
+      window.clearTimeout(longTimer.current);
+      longTimer.current = null;
+    }
   };
 
   return (
@@ -97,41 +109,93 @@ function CreditPage() {
       <ul className="space-y-2">
         {data.map((r) => {
           const open = openId === r.p.id;
+          const showDel = deleteId === r.p.id;
+          const histExpanded = !!histOpen[r.p.id!];
+          const debtPreview = histExpanded ? r.debts : r.debts.slice(-3);
+          const payPreview = histExpanded ? r.pays : r.pays.slice(0, 2);
+          const moreHist = r.debts.length > 3 || r.pays.length > 2;
           return (
             <li key={r.p.id} className="rounded-2xl bg-card p-3 shadow-card">
-              <button type="button" className="flex w-full items-center gap-3 text-left" onClick={() => setOpenId(open ? null : r.p.id!)}>
-                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent font-bold text-accent-foreground">{r.p.name[0]}</span>
-                <div className="min-w-0 flex-1">
+              <div className="flex w-full items-center gap-3">
+                <button
+                  type="button"
+                  className="grid size-11 shrink-0 place-items-center rounded-full bg-accent font-bold text-accent-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditParty(r.p);
+                  }}
+                  aria-label={t("edit")}
+                >
+                  {r.p.name[0]?.toUpperCase()}
+                </button>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => {
+                    if (showDel) {
+                      setDeleteId(null);
+                      return;
+                    }
+                    setOpenId(open ? null : r.p.id!);
+                  }}
+                  onPointerDown={() => startLongPress(r.p.id!)}
+                  onPointerUp={endLongPress}
+                  onPointerLeave={endLongPress}
+                  onPointerCancel={endLongPress}
+                >
                   <p className="truncate font-semibold">{r.p.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {r.p.phone} · {Math.floor((Date.now() - r.oldest) / DAY)} {t("days")}
+                    {r.p.phone || "—"} · {Math.floor((Date.now() - r.oldest) / DAY)} {t("days")}
                     {r.overdue && (
                       <span className="ml-1 rounded-full bg-destructive/10 px-2 font-semibold text-destructive">{t("overdue")}</span>
                     )}
                   </p>
-                </div>
+                </button>
                 <span className="font-bold tabular-nums text-primary">{fmt(r.balance)}</span>
-                <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
-              </button>
+                {showDel ? (
+                  <button
+                    type="button"
+                    className="grid size-10 place-items-center rounded-full bg-destructive text-destructive-foreground"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        await deleteParty(r.p.id!);
+                        toast.success(lang === "rw" ? "Umuntu yasibwe" : "Person deleted");
+                        setDeleteId(null);
+                        if (openId === r.p.id) setOpenId(null);
+                      } catch (err) {
+                        toast.error(String(err));
+                      }
+                    }}
+                    aria-label={lang === "rw" ? "Siba" : "Delete"}
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                ) : (
+                  <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} />
+                )}
+              </div>
+
               {open && (
                 <div className="mt-3 space-y-3 border-t pt-3">
                   <ul className="space-y-1 text-sm">
-                    {r.debts.map((d) => (
+                    {debtPreview.map((d) => (
                       <li key={d.id} className="flex justify-between gap-2">
                         <span>
                           <span className="block">{d.description}</span>
                           <span className="text-xs text-muted-foreground">
-                            {when(d.createdAt)} · {d.dueDays ?? 7} {t("days")}
+                            {when(d.createdAt)}
+                            {d.dueDays != null ? ` · ${d.dueDays} ${t("days")}` : ""}
                           </span>
                         </span>
                         <span className="tabular-nums">{fmt(d.amount)}</span>
                       </li>
                     ))}
                   </ul>
-                  {r.pays.length > 0 && (
+                  {payPreview.length > 0 && (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground">{t("payments")}</p>
-                      {r.pays.map((x) => (
+                      {payPreview.map((x) => (
                         <p key={x.id} className="flex justify-between text-sm text-success">
                           <span>{when(x.createdAt)}</span>
                           <span>−{fmt(x.amount)}</span>
@@ -139,6 +203,22 @@ function CreditPage() {
                       ))}
                     </div>
                   )}
+                  {moreHist && (
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-primary"
+                      onClick={() => setHistOpen((h) => ({ ...h, [r.p.id!]: !histExpanded }))}
+                    >
+                      {histExpanded
+                        ? lang === "rw"
+                          ? "Hisha amateka"
+                          : "Hide history"
+                        : lang === "rw"
+                          ? "Reba amateka yose"
+                          : "Show full history"}
+                    </button>
+                  )}
+
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -146,6 +226,13 @@ function CreditPage() {
                       className="h-11 flex-1 rounded-full bg-primary text-sm font-semibold text-primary-foreground"
                     >
                       {t("recordPayment")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDebtFor(r.p)}
+                      className="h-11 flex-1 rounded-full border text-sm font-semibold"
+                    >
+                      {t("addDebtLbl")}
                     </button>
                     {kind === "customer" && r.p.phone && (
                       <>
@@ -158,7 +245,6 @@ function CreditPage() {
                       </>
                     )}
                   </div>
-                  <AddDebtInline partyId={r.p.id!} />
                 </div>
               )}
             </li>
@@ -179,9 +265,22 @@ function CreditPage() {
           )}
         </DrawerContent>
       </Drawer>
+
+      <Drawer open={!!debtFor} onOpenChange={(o) => !o && setDebtFor(null)}>
+        <DrawerContent className="mx-auto max-w-md">
+          {debtFor && <AddDebtForm party={debtFor} onDone={() => setDebtFor(null)} />}
+        </DrawerContent>
+      </Drawer>
+
       <Drawer open={adding} onOpenChange={setAdding}>
         <DrawerContent className="mx-auto max-w-md">
           <AddPartyForm kind={kind} onDone={() => setAdding(false)} />
+        </DrawerContent>
+      </Drawer>
+
+      <Drawer open={!!editParty} onOpenChange={(o) => !o && setEditParty(null)}>
+        <DrawerContent className="mx-auto max-w-md">
+          {editParty && <EditPartyForm party={editParty} onDone={() => setEditParty(null)} />}
         </DrawerContent>
       </Drawer>
     </div>
@@ -194,14 +293,12 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
   const [amt, setAmt] = useState(() => String(balance));
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Reset amount when opening for a different balance
   useEffect(() => {
     setAmt(String(balance));
   }, [balance, party.id]);
 
   const applyPercent = (pct: number) => {
-    const value = Math.max(0, Math.round(balance * (pct / 100)));
-    setAmt(String(value));
+    setAmt(String(Math.max(0, Math.round(balance * (pct / 100)))));
   };
 
   const save = async () => {
@@ -237,7 +334,7 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
           onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
           className="h-12 rounded-xl text-lg font-semibold"
         />
-        <div className="flex gap-2" role="group" aria-label="Quick percent">
+        <div className="flex gap-2">
           {([20, 50, 100] as const).map((pct) => {
             const target = Math.round(balance * (pct / 100));
             const active = currentNum === target && target > 0;
@@ -245,21 +342,10 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
               <button
                 key={pct}
                 type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  applyPercent(pct);
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  applyPercent(pct);
-                }}
+                onClick={() => applyPercent(pct)}
                 className={cn(
-                  "h-11 flex-1 rounded-full border text-sm font-semibold transition-colors touch-manipulation",
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "bg-card active:bg-muted",
+                  "h-11 flex-1 rounded-full border text-sm font-semibold touch-manipulation",
+                  active ? "border-primary bg-primary text-primary-foreground" : "bg-card active:bg-muted",
                 )}
               >
                 {pct}%
@@ -276,21 +362,76 @@ function PayForm({ party, max, onDone }: { party: Party; max: number; onDone: ()
   );
 }
 
+function AddDebtForm({ party, onDone }: { party: Party; onDone: () => void }) {
+  const { t, lang } = useI18n();
+  const [desc, setDesc] = useState("");
+  const [amt, setAmt] = useState("");
+  const [due, setDue] = useState("");
+
+  const save = async () => {
+    const n = Number(amt) || 0;
+    if (n <= 0) {
+      toast.error(t("amount"));
+      return;
+    }
+    const days = due.trim() ? Number(due) : undefined;
+    await addDebt(party.id!, desc.trim() || "—", n, days && days > 0 ? days : undefined);
+    toast.success(t("addDebtLbl"));
+    onDone();
+  };
+
+  return (
+    <div>
+      <DrawerHeader>
+        <DrawerTitle>
+          {t("addDebtLbl")} — {party.name}
+        </DrawerTitle>
+      </DrawerHeader>
+      <div className="space-y-2 px-4 pb-6">
+        <Input
+          placeholder={`${t("amount")} (RWF) *`}
+          inputMode="numeric"
+          value={amt}
+          onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
+          className="h-12 rounded-xl text-lg font-semibold"
+        />
+        <Input placeholder={t("description")} value={desc} onChange={(e) => setDesc(e.target.value)} className="h-11 rounded-xl" />
+        <Input
+          placeholder={lang === "rw" ? "Igihe (iminsi) — si ngombwa" : "Deadline (days) — optional"}
+          inputMode="numeric"
+          value={due}
+          onChange={(e) => setDue(e.target.value.replace(/\D/g, ""))}
+          className="h-11 rounded-xl"
+        />
+        <button type="button" onClick={save} className="mt-2 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
+          {t("save")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [desc, setDesc] = useState("");
   const [amt, setAmt] = useState("");
+  const [due, setDue] = useState("");
+
   const save = async () => {
     if (!name.trim()) {
       toast.error(t("name"));
       return;
     }
     const id = await addParty(name, phone, kind);
-    if (Number(amt) > 0) await addDebt(id, desc || "—", Number(amt));
+    if (Number(amt) > 0) {
+      const days = due.trim() ? Number(due) : undefined;
+      await addDebt(id, desc || "—", Number(amt), days && days > 0 ? days : undefined);
+    }
     onDone();
   };
+
   return (
     <div>
       <DrawerHeader>
@@ -307,6 +448,13 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
           onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
           className="h-11 rounded-xl"
         />
+        <Input
+          placeholder={lang === "rw" ? "Igihe (iminsi) — si ngombwa" : "Deadline (days) — optional"}
+          inputMode="numeric"
+          value={due}
+          onChange={(e) => setDue(e.target.value.replace(/\D/g, ""))}
+          className="h-11 rounded-xl"
+        />
         <button type="button" onClick={save} className="mt-2 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
           {t("save")}
         </button>
@@ -315,33 +463,33 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
   );
 }
 
-function AddDebtInline({ partyId }: { partyId: number }) {
+function EditPartyForm({ party, onDone }: { party: Party; onDone: () => void }) {
   const { t } = useI18n();
-  const [desc, setDesc] = useState("");
-  const [amt, setAmt] = useState("");
+  const [name, setName] = useState(party.name);
+  const [phone, setPhone] = useState(party.phone || "");
+
+  const save = async () => {
+    if (!name.trim()) {
+      toast.error(t("name"));
+      return;
+    }
+    await updateParty(party.id!, { name, phone });
+    toast.success(t("save"));
+    onDone();
+  };
+
   return (
-    <div className="flex gap-2">
-      <Input placeholder={t("description")} value={desc} onChange={(e) => setDesc(e.target.value)} className="h-10 rounded-xl" />
-      <Input
-        placeholder="RWF"
-        inputMode="numeric"
-        value={amt}
-        onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
-        className="h-10 w-24 rounded-xl"
-      />
-      <button
-        type="button"
-        onClick={async () => {
-          if (Number(amt) > 0) {
-            await addDebt(partyId, desc || "—", Number(amt));
-            setDesc("");
-            setAmt("");
-          }
-        }}
-        className="h-10 shrink-0 rounded-full border px-3 text-xs font-semibold"
-      >
-        {t("addDebtLbl")}
-      </button>
+    <div>
+      <DrawerHeader>
+        <DrawerTitle>{t("edit")} — {party.name}</DrawerTitle>
+      </DrawerHeader>
+      <div className="space-y-2 px-4 pb-6">
+        <Input placeholder={t("name")} value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
+        <Input placeholder={t("phone")} inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl" />
+        <button type="button" onClick={save} className="mt-2 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
+          {t("save")}
+        </button>
+      </div>
     </div>
   );
 }
