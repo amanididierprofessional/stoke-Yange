@@ -29,11 +29,10 @@ export async function pauseSync(): Promise<() => void> {
 /**
  * Serialised sync. By default respects cloudSyncMode (auto only).
  * force: run even in manual mode (Settings button, post-login).
- * bidirectional: after push, force-pull so other phones' data appears (default true when force or auto).
  */
 export function trySync(opts?: {
   force?: boolean;
-  /** Push only — used internally by fullSync */
+  /** Push only — used internally */
   pushOnly?: boolean;
 }): Promise<{ ok: boolean; reason?: string }> {
   if (syncPaused) return Promise.resolve({ ok: false, reason: "reset_in_progress" });
@@ -48,7 +47,6 @@ export function trySync(opts?: {
       if (mode !== "auto") return { ok: false, reason: "manual_mode" };
     }
     if (opts?.pushOnly) return doPush();
-    // Auto + forced manual: push then pull (bidirectional)
     return doFullSync();
   })().finally(() => {
     running = null;
@@ -65,7 +63,6 @@ export function trySync(opts?: {
 /** Explicit push + force pull for Settings / login / auto interval. */
 export async function fullSync(): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
   if (syncPaused) return { ok: false, reason: "reset_in_progress" };
-  // Wait for any in-flight sync, then run our own
   if (running) {
     try {
       await running;
@@ -75,30 +72,31 @@ export async function fullSync(): Promise<{ ok: boolean; reason?: string; pulled
   }
   if (syncPaused) return { ok: false, reason: "reset_in_progress" };
 
-  running = (async () => {
-    const push = await doPush();
-    if (!push.ok && push.reason !== "offline" && push.reason !== "no_session" && push.reason !== "not_configured") {
-      // Still attempt pull so workers get others' data even if push had a partial issue
-      console.warn("[sync] push issue before pull", push.reason);
-    }
-    if (!navigator.onLine) return push;
-    const pull = await pullFromCloud({ force: true });
-    if (!pull.ok) return { ok: false, reason: pull.reason ?? "pull_failed" };
-    return { ok: true, reason: push.ok ? undefined : push.reason };
-  })().finally(() => {
+  running = (async () => doFullSync())().finally(() => {
     running = null;
   });
 
   return running as Promise<{ ok: boolean; reason?: string; pulled?: number }>;
 }
 
-async function doFullSync(): Promise<{ ok: boolean; reason?: string }> {
+async function doFullSync(): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
   const push = await doPush();
   if (!navigator.onLine) return push;
-  if (push.reason === "no_session" || push.reason === "not_configured") return push;
+  if (push.reason === "no_session" || push.reason === "not_configured" || push.reason === "offline") {
+    return push;
+  }
+
+  // Only replace local with cloud when push succeeded (local is safely on server)
+  // or local shop is empty (first login / other phone).
+  const localCount = await db.products.count();
+  if (!push.ok && localCount > 0) {
+    console.warn("[sync] skip force-pull after failed push to keep local data", push.reason);
+    return { ok: false, reason: push.reason };
+  }
+
   const pull = await pullFromCloud({ force: true });
-  if (!pull.ok) return { ok: false, reason: pull.reason ?? "pull_failed" };
-  return { ok: true };
+  if (!pull.ok) return { ok: false, reason: pull.reason ?? "pull_failed", pulled: pull.pulled };
+  return { ok: true, pulled: pull.pulled };
 }
 
 /** Clear shop tables only (not settings/account) before loading another user's cloud data. */
@@ -124,7 +122,6 @@ export async function clearShopTables() {
  */
 export async function clearLocalShopKeepAccount() {
   await clearShopTables();
-  // Drop demo/seed flags so the shop stays empty until user or cloud fills it
   await db.settings.delete("seeded");
   await db.settings.put({ key: "initialized", value: "1" });
 }
@@ -147,7 +144,6 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
 
   const userId = session.user.id;
 
-  // Profile
   try {
     const accRow = await db.settings.get("account");
     const shop = (await db.settings.get("shopName"))?.value ?? "Iduka Ryanjye";
@@ -197,8 +193,15 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
     if (error) return { ok: false, reason: error.message };
   }
 
-  // Empty local is still a successful push (nothing to upload)
-  if (products.length === 0 && parties.length === 0 && sales.length === 0 && debts.length === 0 && payments.length === 0 && movements.length === 0 && pending.length === 0) {
+  if (
+    products.length === 0 &&
+    parties.length === 0 &&
+    sales.length === 0 &&
+    debts.length === 0 &&
+    payments.length === 0 &&
+    movements.length === 0 &&
+    pending.length === 0
+  ) {
     return { ok: true };
   }
 
