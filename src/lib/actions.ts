@@ -1,12 +1,10 @@
 import { db, type Product, type SaleType, type PartyKind } from "./db";
 import { trySync } from "./sync";
 
-export const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
+export const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const queue = async (op: string) => {
   await db.outbox.add({ op, createdAt: Date.now() });
-  // Defer until the surrounding IndexedDB transaction has committed. This avoids
-  // racing a cloud upload against uncommitted local sale/stock changes.
   if (typeof navigator !== "undefined" && navigator.onLine) {
     window.setTimeout(() => {
       trySync().catch(() => {});
@@ -55,6 +53,7 @@ export async function recordSale(opts: {
         amount: total,
         createdAt: now,
         saleId,
+        dueDays: 7,
       });
     }
     await queue("sale");
@@ -153,18 +152,39 @@ export async function addParty(name: string, phone: string, kind: PartyKind) {
   return id;
 }
 
-export async function addDebt(partyId: number, description: string, amount: number) {
+export async function updateParty(id: number, data: { name: string; phone: string }) {
+  await db.parties.update(id, {
+    name: data.name.trim(),
+    phone: data.phone.trim(),
+  });
+  await queue("party");
+}
+
+/** Delete person and their debts/payments (local + outbox deletes for cloud). */
+export async function deleteParty(partyId: number) {
+  await db.transaction("rw", [db.parties, db.debts, db.payments, db.outbox], async () => {
+    const debtIds = await db.debts.where("partyId").equals(partyId).primaryKeys();
+    const payIds = await db.payments.where("partyId").equals(partyId).primaryKeys();
+    await db.debts.bulkDelete(debtIds);
+    await db.payments.bulkDelete(payIds);
+    await db.parties.delete(partyId);
+    for (const id of debtIds) await db.outbox.add({ op: `del:debts:${id}`, createdAt: Date.now() });
+    await db.outbox.add({ op: `del:parties:${partyId}`, createdAt: Date.now() });
+    await queue("party_del");
+  });
+}
+
+export async function addDebt(partyId: number, description: string, amount: number, dueDays?: number) {
   await db.debts.add({
     partyId,
     description,
     amount,
     createdAt: Date.now(),
-    dueDays: 14,
+    dueDays: dueDays != null && dueDays > 0 ? dueDays : 14,
   });
   await queue("debt");
 }
 
-/** Record a payment (optional custom timestamp for back-dating). */
 export async function recordPayment(partyId: number, amount: number, createdAt?: number) {
   await db.payments.add({
     partyId,
@@ -174,7 +194,6 @@ export async function recordPayment(partyId: number, amount: number, createdAt?:
   await queue("payment");
 }
 
-/** Alias kept for older call sites */
 export async function addPayment(partyId: number, amount: number) {
   return recordPayment(partyId, amount);
 }
