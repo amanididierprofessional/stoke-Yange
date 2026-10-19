@@ -9,7 +9,7 @@
  */
 import { db, factoryReset } from "./db";
 import { ensureSupabase, supabase, supabaseConfigured } from "./supabase";
-import { clearShopTables, pullFromCloud, trySync } from "./sync";
+import { clearShopTables, fullSync, pullFromCloud, trySync } from "./sync";
 
 export type Account = {
   loginType: "phone" | "email";
@@ -196,7 +196,8 @@ export async function signUp(opts: {
   }
   await saveAccount(account);
   setLoggedIn(true);
-  trySync().catch(() => {});
+  // New account: push profile + any seed; pull (usually empty)
+  fullSync().catch(() => trySync({ force: true }).catch(() => {}));
 
   return { ok: true };
 }
@@ -233,7 +234,6 @@ export async function signIn(opts: {
           (prev.loginType === opts.loginType && prev.identifier === id));
 
       // Different account than what's on this phone → drop local shop data
-      // so we don't show another user's (or leftover) products
       if (!sameUser) {
         await clearShopTables();
       }
@@ -252,19 +252,21 @@ export async function signIn(opts: {
       account = await applyProfileFromCloud(account, uid, data.session.user.email);
       setLoggedIn(true);
 
-      // Always download this user's cloud shop when local is empty OR account switched.
-      // Same user with local data: keep offline-first (push later).
-      const localCount = await db.products.count();
-      const mustPull = !sameUser || localCount === 0;
-      if (mustPull) {
+      // Always bidirectional: push local changes, then force-pull cloud shop.
+      // Same account on phone 2 / after logout gets the latest shared data.
+      const syncResult = await fullSync().catch((e) => {
+        console.warn("[auth] fullSync", e);
+        return { ok: false as const, reason: String(e) };
+      });
+      if (!syncResult.ok) {
+        // Fallback: at least try pull so empty phones get data
         const pull = await pullFromCloud({ force: true }).catch((e) => {
-          console.warn("[auth] pull", e);
+          console.warn("[auth] pull fallback", e);
           return { ok: false as const, reason: String(e) };
         });
-        console.info("[auth] pullFromCloud", pull);
+        console.info("[auth] pullFromCloud fallback", pull);
       } else {
-        // Same phone, same user — upload any offline changes
-        trySync().catch(() => {});
+        console.info("[auth] fullSync ok", syncResult);
       }
       return { ok: true };
     }
@@ -300,19 +302,19 @@ export async function recoverPassword(opts: {
 
   const client = await ensureSupabase();
 
-  // Cloud accounts must use Supabase's actual recovery flow. Never claim a
-  // local password change also changed the cloud password.
+  // Cloud accounts must use Supabase's actual recovery flow.
   if (supabaseConfigured && client && navigator.onLine) {
     if (opts.loginType !== "email") {
       return { ok: false, error: "phone_support" };
     }
     const account = await getAccount();
-    if (account && (
-      account.loginType !== "email" ||
-      account.identifier !== id ||
-      account.fullName.trim().toLowerCase() !== opts.fullName.trim().toLowerCase() ||
-      account.businessName.trim().toLowerCase() !== opts.businessName.trim().toLowerCase()
-    )) {
+    if (
+      account &&
+      (account.loginType !== "email" ||
+        account.identifier !== id ||
+        account.fullName.trim().toLowerCase() !== opts.fullName.trim().toLowerCase() ||
+        account.businessName.trim().toLowerCase() !== opts.businessName.trim().toLowerCase())
+    ) {
       return { ok: false, error: "verify_fail" };
     }
     const { error } = await client.auth.resetPasswordForEmail(id, {
@@ -325,8 +327,6 @@ export async function recoverPassword(opts: {
     return { ok: true, mode: "email" };
   }
 
-  // Local-only accounts can be recovered on the same device after matching
-  // the identifier and the profile details saved on that device.
   if (!opts.newPassword || opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
   const account = await getAccount();
   if (!account) return { ok: false, error: navigator.onLine ? "no_account" : "internet_required" };
@@ -343,8 +343,9 @@ export async function recoverPassword(opts: {
   return { ok: true, mode: "local" };
 }
 
-
-export async function completePasswordRecovery(newPassword: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function completePasswordRecovery(
+  newPassword: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   if (newPassword.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
   const client = await ensureSupabase();
   if (!client || !supabaseConfigured || !navigator.onLine) {
@@ -368,6 +369,7 @@ export function clearSessionOnly() {
   setLoggedIn(false);
 }
 
+/** Logout: clear session + local shop + account on this phone (cloud kept). */
 export async function signOutLocal() {
   setLoggedIn(false);
   if (supabase) {
@@ -393,7 +395,6 @@ export async function wipeCloudData(): Promise<{ ok: boolean; reason?: string }>
       const { data } = await supabase.auth.getSession();
       const uid = data.session?.user?.id;
       if (!uid) return { ok: false, reason: "no_session" };
-      // Delete dependants before their referenced rows, and inspect every response.
       const deletions = [
         await supabase.from("movements").delete().eq("user_id", uid),
         await supabase.from("payments").delete().eq("user_id", uid),

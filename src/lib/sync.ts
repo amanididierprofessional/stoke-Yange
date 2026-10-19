@@ -1,6 +1,6 @@
 /**
- * Offline-first sync: push Dexie → Supabase when online + signed in.
- * pullFromCloud: restore products/sales/etc. after cloud login.
+ * Offline-first sync: push Dexie → Supabase, pull Supabase → Dexie.
+ * fullSync = push then force-pull (multi-device / same business account).
  */
 import { db } from "./db";
 import { ensureSupabase, supabaseConfigured } from "./supabase";
@@ -21,11 +21,21 @@ export async function pauseSync(): Promise<() => void> {
       // Reset must still proceed to report its own result.
     }
   }
-  return () => { syncPaused = false; };
+  return () => {
+    syncPaused = false;
+  };
 }
 
-/** Serialised: one sync at a time; actions during a sync trigger one more pass. */
-export function trySync(opts?: { force?: boolean }): Promise<{ ok: boolean; reason?: string }> {
+/**
+ * Serialised sync. By default respects cloudSyncMode (auto only).
+ * force: run even in manual mode (Settings button, post-login).
+ * bidirectional: after push, force-pull so other phones' data appears (default true when force or auto).
+ */
+export function trySync(opts?: {
+  force?: boolean;
+  /** Push only — used internally by fullSync */
+  pushOnly?: boolean;
+}): Promise<{ ok: boolean; reason?: string }> {
   if (syncPaused) return Promise.resolve({ ok: false, reason: "reset_in_progress" });
   if (running) {
     again = true;
@@ -33,12 +43,13 @@ export function trySync(opts?: { force?: boolean }): Promise<{ ok: boolean; reas
     return running;
   }
   running = (async () => {
-    // Cloud backup is opt-in: without an explicit automatic choice, sync only on manual request.
     if (!opts?.force) {
       const mode = (await db.settings.get("cloudSyncMode"))?.value;
       if (mode !== "auto") return { ok: false, reason: "manual_mode" };
     }
-    return doSync();
+    if (opts?.pushOnly) return doPush();
+    // Auto + forced manual: push then pull (bidirectional)
+    return doFullSync();
   })().finally(() => {
     running = null;
     if (again) {
@@ -49,6 +60,45 @@ export function trySync(opts?: { force?: boolean }): Promise<{ ok: boolean; reas
     }
   });
   return running;
+}
+
+/** Explicit push + force pull for Settings / login / auto interval. */
+export async function fullSync(): Promise<{ ok: boolean; reason?: string; pulled?: number }> {
+  if (syncPaused) return { ok: false, reason: "reset_in_progress" };
+  // Wait for any in-flight sync, then run our own
+  if (running) {
+    try {
+      await running;
+    } catch {
+      /* */
+    }
+  }
+  if (syncPaused) return { ok: false, reason: "reset_in_progress" };
+
+  running = (async () => {
+    const push = await doPush();
+    if (!push.ok && push.reason !== "offline" && push.reason !== "no_session" && push.reason !== "not_configured") {
+      // Still attempt pull so workers get others' data even if push had a partial issue
+      console.warn("[sync] push issue before pull", push.reason);
+    }
+    if (!navigator.onLine) return push;
+    const pull = await pullFromCloud({ force: true });
+    if (!pull.ok) return { ok: false, reason: pull.reason ?? "pull_failed" };
+    return { ok: true, reason: push.ok ? undefined : push.reason };
+  })().finally(() => {
+    running = null;
+  });
+
+  return running as Promise<{ ok: boolean; reason?: string; pulled?: number }>;
+}
+
+async function doFullSync(): Promise<{ ok: boolean; reason?: string }> {
+  const push = await doPush();
+  if (!navigator.onLine) return push;
+  if (push.reason === "no_session" || push.reason === "not_configured") return push;
+  const pull = await pullFromCloud({ force: true });
+  if (!pull.ok) return { ok: false, reason: pull.reason ?? "pull_failed" };
+  return { ok: true };
 }
 
 /** Clear shop tables only (not settings/account) before loading another user's cloud data. */
@@ -68,7 +118,18 @@ export async function clearShopTables() {
   );
 }
 
-async function doSync(): Promise<{ ok: boolean; reason?: string }> {
+/**
+ * Clear all shop data on this phone but KEEP account + session + sync preferences.
+ * Used by Settings → "Phone only" reset.
+ */
+export async function clearLocalShopKeepAccount() {
+  await clearShopTables();
+  // Drop demo/seed flags so the shop stays empty until user or cloud fills it
+  await db.settings.delete("seeded");
+  await db.settings.put({ key: "initialized", value: "1" });
+}
+
+async function doPush(): Promise<{ ok: boolean; reason?: string }> {
   if (!supabaseConfigured) return { ok: false, reason: "not_configured" };
   if (!navigator.onLine) return { ok: false, reason: "offline" };
 
@@ -136,7 +197,8 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
     if (error) return { ok: false, reason: error.message };
   }
 
-  if (products.length === 0 && parties.length === 0 && sales.length === 0 && pending.length === 0) {
+  // Empty local is still a successful push (nothing to upload)
+  if (products.length === 0 && parties.length === 0 && sales.length === 0 && debts.length === 0 && payments.length === 0 && movements.length === 0 && pending.length === 0) {
     return { ok: true };
   }
 
@@ -258,8 +320,8 @@ async function doSync(): Promise<{ ok: boolean; reason?: string }> {
 
 /**
  * Download this user's shop from Supabase into Dexie.
- * force=true: clear local shop tables and replace (used after sign-in / account switch).
- * force=false: only pull when local shop is empty (same device offline-first).
+ * force=true: clear local shop tables and replace (sign-in, multi-device, fullSync).
+ * force=false: only pull when local shop is empty.
  */
 export async function pullFromCloud(opts?: {
   force?: boolean;
@@ -276,7 +338,6 @@ export async function pullFromCloud(opts?: {
   const localCount = await db.products.count();
   if (!force && localCount > 0) return { ok: true, reason: "local_has_data", pulled: 0 };
 
-  // Fetch all shop tables concurrently to reduce sign-in round-trips.
   const [productRes, partyRes, saleRes, debtRes, paymentRes, movementRes] = await Promise.all([
     client.from("products").select("*").eq("user_id", userId),
     client.from("parties").select("*").eq("user_id", userId),
