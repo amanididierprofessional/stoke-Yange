@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowLeft, Pencil, Phone, MessageCircle, Cloud, RefreshCw, Download } from "lucide-react";
+import { ArrowLeft, Pencil, Phone, MessageCircle, Cloud, RefreshCw, Download, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { db } from "@/lib/db";
@@ -14,8 +14,8 @@ import {
   wipeCloudData,
   type Account,
 } from "@/lib/auth";
-import { buildReportHtml, exportPdfReport, exportSalesCsv } from "@/lib/report";
-import { downloadBlob } from "@/lib/download";
+import { buildReportHtml, exportSalesCsv } from "@/lib/report";
+import { downloadBlob, shareBlob } from "@/lib/download";
 import { clearLocalShopKeepAccount, fullSync, pauseSync } from "@/lib/sync";
 
 export const Route = createFileRoute("/settings")({
@@ -39,6 +39,7 @@ function SettingsPage() {
   const [syncing, setSyncing] = useState(false);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [reportName, setReportName] = useState("");
+  const [dlBusy, setDlBusy] = useState(false);
   const syncMode = useLiveQuery(() => db.settings.get("cloudSyncMode"), [])?.value;
   const pendingSync = useLiveQuery(() => db.outbox.count(), []) ?? 0;
 
@@ -102,16 +103,54 @@ function SettingsPage() {
     }
   };
 
-  const downloadReport = () => {
+  const downloadReport = async () => {
     if (!reportHtml) return;
-    downloadBlob(new Blob([reportHtml], { type: "text/html;charset=utf-8" }), reportName || "report.html");
-    toast.success(t("exportPdf"));
+    setDlBusy(true);
+    try {
+      await downloadBlob(
+        new Blob([reportHtml], { type: "text/html;charset=utf-8" }),
+        reportName || "stoke-yange-report.html",
+      );
+      toast.success(
+        lang === "rw"
+          ? "Raporo yoherejwe (Downloads cyangwa Share)."
+          : "Report sent to Downloads / Files. Check your notification shade.",
+      );
+    } catch (e) {
+      toast.error(lang === "rw" ? "Kuramo byanze." : `Download failed: ${String(e)}`);
+    } finally {
+      setDlBusy(false);
+    }
+  };
+
+  const shareReport = async () => {
+    if (!reportHtml) return;
+    setDlBusy(true);
+    try {
+      const ok = await shareBlob(
+        new Blob([reportHtml], { type: "text/html;charset=utf-8" }),
+        reportName || "stoke-yange-report.html",
+      );
+      if (!ok) {
+        await downloadReport();
+        return;
+      }
+      toast.success(lang === "rw" ? "Hitamo aho ubika." : "Pick where to save (Files / Drive / WhatsApp).");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setDlBusy(false);
+    }
   };
 
   const exportCsv = async () => {
     try {
       await exportSalesCsv();
-      toast.success(t("exportCsv"));
+      toast.success(
+        lang === "rw"
+          ? "CSV yoherejwe muri Downloads."
+          : "CSV sent to Downloads. Check notifications.",
+      );
     } catch (e) {
       toast.error(String(e));
     }
@@ -136,13 +175,13 @@ function SettingsPage() {
       await clearLocalShopKeepAccount();
       toast.success(
         lang === "rw"
-          ? "Amakuru y'iduka yasibwe. Konti yawe iracyari."
-          : "Shop data cleared. You are still signed in.",
+          ? "Amakuru y'iduka yasibwe kuri telefone. Konti iracyari. Cloud ntiyavuye — kanda Sync niba ushaka kuyagarura."
+          : "Shop data cleared on this phone. Account kept. Cloud still has a copy — tap Sync to restore it.",
       );
-      window.location.reload();
+      // Hard reload so UI empties; blockCloudPull stops auto-refill
+      window.setTimeout(() => window.location.reload(), 400);
     } catch (error) {
       toast.error(String(error));
-    } finally {
       resumeSync?.();
       setBusy(false);
       setResetOpen(false);
@@ -156,19 +195,26 @@ function SettingsPage() {
       resumeSync = await pauseSync();
       const cloud = await wipeCloudData();
       if (!cloud.ok) {
-        toast.error(lang === "rw" ? "Cloud ntiyasibwe." : "Cloud reset failed.");
+        toast.error(
+          lang === "rw"
+            ? `Cloud ntiyasibwe (${cloud.reason ?? "error"}).`
+            : `Cloud reset failed (${cloud.reason ?? "error"}).`,
+        );
+        resumeSync?.();
+        setBusy(false);
         return;
       }
+      // Full wipe: allow empty push / no need to block pull of empty cloud
       await clearLocalShopKeepAccount();
+      await db.settings.delete("blockCloudPull");
       toast.success(
         lang === "rw"
           ? "Amakuru yasibwe kuri telefone no kuri cloud."
           : "Shop data cleared on phone and cloud.",
       );
-      window.location.reload();
+      window.setTimeout(() => window.location.reload(), 400);
     } catch (error) {
       toast.error(String(error));
-    } finally {
       resumeSync?.();
       setBusy(false);
       setResetOpen(false);
@@ -190,7 +236,17 @@ function SettingsPage() {
           <p className="min-w-0 flex-1 truncate font-semibold">{lang === "rw" ? "Raporo" : "Report"}</p>
           <button
             type="button"
-            onClick={downloadReport}
+            disabled={dlBusy}
+            onClick={() => void shareReport()}
+            className="grid size-10 place-items-center rounded-full border"
+            aria-label="Share"
+          >
+            <Share2 className="size-4" />
+          </button>
+          <button
+            type="button"
+            disabled={dlBusy}
+            onClick={() => void downloadReport()}
             className="inline-flex h-10 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground"
           >
             <Download className="size-4" />
@@ -327,6 +383,11 @@ function SettingsPage() {
           <div className="w-full max-w-sm rounded-3xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <p className="text-base font-bold">{t("resetTitle")}</p>
             <p className="mt-2 text-sm text-muted-foreground">{t("resetBody")}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {lang === "rw"
+                ? "Telefone gusa: amakuru asibwa hano gusa. Cloud iracyabikwa. Sync igarura."
+                : "Phone only: wipes this device. Cloud copy stays. Sync restores it."}
+            </p>
             <div className="mt-4 space-y-2">
               <button type="button" disabled={busy} onClick={resetAppOnly} className="h-12 w-full rounded-full border font-semibold">{t("resetPhoneOnly")}</button>
               <button type="button" disabled={busy} onClick={resetFull} className="h-12 w-full rounded-full bg-destructive font-semibold text-destructive-foreground">{t("resetFull")}</button>
