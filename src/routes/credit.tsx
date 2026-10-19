@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, MessageCircle, MessageSquare, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ function CreditPage() {
   const { t, lang } = useI18n();
   const shop = useShopName();
   const [kind, setKind] = useState<PartyKind>("customer");
+  const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [payFor, setPayFor] = useState<Party | null>(null);
   const [debtFor, setDebtFor] = useState<Party | null>(null);
@@ -55,7 +56,22 @@ function CreditPage() {
         .sort((a, b) => a.oldest - b.oldest);
     }, [kind]) ?? [];
 
-  const total = data.reduce((a, r) => a + r.balance, 0);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return data;
+    const digits = q.replace(/\D/g, "");
+    return data.filter((r) => {
+      const name = (r.p.name || "").toLowerCase();
+      const phone = (r.p.phone || "").replace(/\D/g, "");
+      if (name.includes(q)) return true;
+      if (digits && phone.includes(digits)) return true;
+      // also match description lines for quick find
+      if (r.debts.some((d) => (d.description || "").toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [data, query]);
+
+  const total = filtered.reduce((a, r) => a + r.balance, 0);
 
   const remind = (r: (typeof data)[number], via: "wa" | "sms") => {
     const msg = encodeURIComponent(reminderText(lang, r.p.name, fmt(r.balance), shop));
@@ -82,7 +98,11 @@ function CreditPage() {
           <button
             key={k}
             type="button"
-            onClick={() => setKind(k)}
+            onClick={() => {
+              setKind(k);
+              setQuery("");
+              setOpenId(null);
+            }}
             className={cn(
               "h-11 rounded-full px-2 text-xs font-semibold leading-tight",
               kind === k ? "bg-card text-primary shadow-card" : "text-muted-foreground",
@@ -92,9 +112,47 @@ function CreditPage() {
           </button>
         ))}
       </div>
+
+      {/* Search — works for both tabs: people who owe you + people you owe */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={
+            lang === "rw"
+              ? kind === "customer"
+                ? "Shakisha umukiliya (izina cyangwa telefone)…"
+                : "Shakisha utanga (izina cyangwa telefone)…"
+              : kind === "customer"
+                ? "Search who owes you (name or phone)…"
+                : "Search who you owe (name or phone)…"
+          }
+          className="h-12 rounded-xl pl-10 pr-10"
+          inputMode="search"
+          autoComplete="off"
+        />
+        {query.trim() && (
+          <button
+            type="button"
+            className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-muted"
+            onClick={() => setQuery("")}
+            aria-label={lang === "rw" ? "Siba" : "Clear"}
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+
       <div className="flex items-center justify-between rounded-2xl bg-ink p-4 text-ink-foreground">
         <div>
-          <p className="text-xs opacity-70">{t("total")}</p>
+          <p className="text-xs opacity-70">
+            {query.trim()
+              ? lang === "rw"
+                ? `Ibisubizo (${filtered.length})`
+                : `Results (${filtered.length})`
+              : t("total")}
+          </p>
           <p className="text-2xl font-bold tabular-nums">{fmt(total)}</p>
         </div>
         <button
@@ -107,7 +165,7 @@ function CreditPage() {
       </div>
 
       <ul className="space-y-2">
-        {data.map((r) => {
+        {filtered.map((r) => {
           const open = openId === r.p.id;
           const showDel = deleteId === r.p.id;
           const histExpanded = !!histOpen[r.p.id!];
@@ -250,7 +308,15 @@ function CreditPage() {
             </li>
           );
         })}
-        {data.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{t("noItems")}</p>}
+        {filtered.length === 0 && (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            {query.trim()
+              ? lang === "rw"
+                ? "Nta muntu uhuye n'ubushakashatsi."
+                : "No person matches your search."
+              : t("noItems")}
+          </p>
+        )}
       </ul>
 
       <Drawer open={!!payFor} onOpenChange={(o) => !o && setPayFor(null)}>
@@ -473,7 +539,7 @@ function EditPartyForm({ party, onDone }: { party: Party; onDone: () => void }) 
       toast.error(t("name"));
       return;
     }
-    await updateParty(party.id!, { name, phone });
+    await updateParty(party.id!, { name: name.trim(), phone: phone.trim() });
     toast.success(t("save"));
     onDone();
   };
@@ -481,7 +547,7 @@ function EditPartyForm({ party, onDone }: { party: Party; onDone: () => void }) 
   return (
     <div>
       <DrawerHeader>
-        <DrawerTitle>{t("edit")} — {party.name}</DrawerTitle>
+        <DrawerTitle>{t("edit")}</DrawerTitle>
       </DrawerHeader>
       <div className="space-y-2 px-4 pb-6">
         <Input placeholder={t("name")} value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
