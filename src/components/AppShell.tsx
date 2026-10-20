@@ -69,7 +69,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     setShowCloudPrompt(false);
   };
 
-  // Auto bidirectional sync
   useEffect(() => {
     if (!authed || syncMode !== "auto") return;
     const tick = () => {
@@ -92,7 +91,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [authed, syncMode]);
 
-  // Remote-ahead pill: poll while online + logged in; also on reconnect
   useEffect(() => {
     if (!authed) {
       setRemoteAhead(false);
@@ -120,7 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const applyRemotePill = async () => {
     setPillBusy(true);
     try {
-      const r = await fullSync();
+      const r = await fullSync({ restoreFromCloud: true });
       if (r.ok) {
         setRemoteAhead(false);
       }
