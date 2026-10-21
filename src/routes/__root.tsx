@@ -17,6 +17,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/AppShell";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { startAnalytics } from "@/lib/analytics";
 
 function NotFoundComponent() {
   return (
@@ -139,6 +140,7 @@ function RootComponent() {
     registerOfflineApp().catch((error) => {
       console.warn("[offline] Service worker registration failed:", error);
     });
+    startAnalytics();
   }, []);
 
   return (
