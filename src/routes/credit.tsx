@@ -49,11 +49,12 @@ function CreditPage() {
           const py = pays.filter((x) => x.partyId === p.id).sort((a, b) => b.createdAt - a.createdAt);
           const balance = d.reduce((a, x) => a + x.amount, 0) - py.reduce((a, x) => a + x.amount, 0);
           const oldest = d[0];
-          const outstanding = balance > 0 ? d : [];
+          const outstanding = balance > 0 ? d.filter((debt) => debt.dueDays != null && debt.dueDays > 0) : [];
           const deadlineAt = outstanding.length
-            ? Math.min(...outstanding.map((debt) => debt.createdAt + (debt.dueDays ?? 7) * DAY))
+            ? Math.min(...outstanding.map((debt) => debt.createdAt + debt.dueDays! * DAY))
             : Number.POSITIVE_INFINITY;
-          const overdue = !!oldest && balance > 0 && deadlineAt < Date.now();
+          const overdue = outstanding.length > 0 && deadlineAt < Date.now();
+          // If no deadline was entered, order by how long the oldest debt has been open.
           const sortAt = outstanding.length ? deadlineAt : (oldest?.createdAt ?? p.createdAt);
           return { p, debts: d, pays: py, balance, oldest: oldest?.createdAt ?? p.createdAt, sortAt, overdue };
         })
