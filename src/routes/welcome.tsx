@@ -277,7 +277,7 @@ function WelcomePage() {
               </button>
             </div>
             {isAndroid && !isStandalone() ? (
-              <a href={ANDROID_APK_URL} onClick={(event) => { event.preventDefault(); const link = document.createElement("a"); link.href = ANDROID_APK_URL; link.download = "stoke-yange.apk"; link.rel = "noopener"; document.body.appendChild(link); link.click(); link.remove(); navigate({ to: "/install-android" }); }} className="hidden h-9 max-w-[12rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex">
+              <a href="/install-android" className="hidden h-9 max-w-[12rem] items-center gap-1 truncate rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground sm:inline-flex">
                 <Download className="size-3.5 shrink-0" />
                 <span className="truncate">{t.androidDownload}</span>
               </a>
@@ -304,7 +304,7 @@ function WelcomePage() {
 
             <div className="mt-8 flex justify-center lg:justify-start">
               {isAndroid && !isStandalone() ? (
-                <a href={ANDROID_APK_URL} onClick={(event) => { event.preventDefault(); const link = document.createElement("a"); link.href = ANDROID_APK_URL; link.download = "stoke-yange.apk"; link.rel = "noopener"; document.body.appendChild(link); link.click(); link.remove(); navigate({ to: "/install-android" }); }} className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground shadow-card sm:w-auto sm:min-w-[12rem]">
+                <a href="/install-android" className="inline-flex min-h-13 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base font-bold leading-tight text-primary-foreground shadow-card sm:w-auto sm:min-w-[12rem]">
                   <Download className="size-5 shrink-0" /><span className="text-center">{t.androidDownload}</span>
                 </a>
               ) : (
