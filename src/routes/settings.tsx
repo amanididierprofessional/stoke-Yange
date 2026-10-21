@@ -38,7 +38,6 @@ function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
-  const [reportName, setReportName] = useState("");
   const [dlBusy, setDlBusy] = useState(false);
   const syncMode = useLiveQuery(() => db.settings.get("cloudSyncMode"), [])?.value;
   const pendingSync = useLiveQuery(() => db.outbox.count(), []) ?? 0;
@@ -97,7 +96,6 @@ function SettingsPage() {
     try {
       const { html, filename } = await buildReportHtml(name || shop);
       setReportHtml(html);
-      setReportName(filename.replace(/\.html$/i, ".pdf"));
     } catch (e) {
       toast.error(String(e));
     }
