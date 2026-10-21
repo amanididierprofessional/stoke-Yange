@@ -220,8 +220,14 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
       });
       if (!res.ok) {
         if (res.error === "exists") {
-          toast.message(t("needLogin"));
-          goLogin();
+          // Do not switch screens or discard the signup form automatically.
+          // Supabase has confirmed that this identifier is already registered;
+          // let the user choose Login explicitly or correct the identifier.
+          toast.error(
+            lang === "rw"
+              ? "Iyi email cyangwa nimero isanzwe ifite konti. Reba ibyo wanditse, cyangwa uhitemo Injira niba ari konti yawe."
+              : "This email or phone number is already registered. Check what you entered, or choose Log in if this is your account.",
+          );
           return;
         }
         if (res.error === "password_short") {
