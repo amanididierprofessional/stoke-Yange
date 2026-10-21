@@ -201,3 +201,7 @@ create trigger on_auth_user_created
 -- Done. Next:
 -- Authentication → Providers → Email: enable, turn OFF "Confirm email" for faster login
 -- Project Settings → API: copy anon/public key into Vercel as VITE_SUPABASE_ANON_KEY
+
+
+-- This function is invoked by the auth.users trigger only; it must not be callable as a public RPC.
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
