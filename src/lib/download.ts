@@ -26,7 +26,6 @@ function triggerAnchorDownload(url: string, filename: string) {
   a.href = url;
   a.download = filename;
   a.rel = "noopener";
-  if (!isNativeShell()) a.target = "_blank";
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
