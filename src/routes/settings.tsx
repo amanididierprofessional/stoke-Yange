@@ -14,7 +14,7 @@ import {
   wipeCloudData,
   type Account,
 } from "@/lib/auth";
-import { buildReportHtml, exportSalesCsv } from "@/lib/report";
+import { buildReportHtml, buildReportPdf, exportSalesCsv } from "@/lib/report";
 import { downloadBlob, shareBlob } from "@/lib/download";
 import { clearLocalShopKeepAccount, fullSync, pauseSync } from "@/lib/sync";
 
@@ -97,7 +97,7 @@ function SettingsPage() {
     try {
       const { html, filename } = await buildReportHtml(name || shop);
       setReportHtml(html);
-      setReportName(filename);
+      setReportName(filename.replace(/\.html$/i, ".pdf"));
     } catch (e) {
       toast.error(String(e));
     }
@@ -107,10 +107,8 @@ function SettingsPage() {
     if (!reportHtml) return;
     setDlBusy(true);
     try {
-      await downloadBlob(
-        new Blob([reportHtml], { type: "text/html;charset=utf-8" }),
-        reportName || "stoke-yange-report.html",
-      );
+      const pdf = await buildReportPdf(name || shop);
+      await downloadBlob(pdf.blob, pdf.filename);
       toast.success(
         lang === "rw"
           ? "Raporo yoherejwe (Downloads cyangwa Share)."
@@ -127,10 +125,8 @@ function SettingsPage() {
     if (!reportHtml) return;
     setDlBusy(true);
     try {
-      const ok = await shareBlob(
-        new Blob([reportHtml], { type: "text/html;charset=utf-8" }),
-        reportName || "stoke-yange-report.html",
-      );
+      const pdf = await buildReportPdf(name || shop);
+      const ok = await shareBlob(pdf.blob, pdf.filename);
       if (!ok) {
         await downloadReport();
         return;
