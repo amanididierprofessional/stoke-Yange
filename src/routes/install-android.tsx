@@ -72,13 +72,10 @@ function AndroidInstallGuide() {
     if (saved === "en") setLang("en");
   }, []);
   const download = () => {
-    const a = document.createElement("a");
-    a.href = APK_URL;
-    a.download = "stoke-yange.apk";
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    // GitHub release assets are cross-origin; the HTML download attribute is
+    // not reliable there. Navigate directly to the official asset endpoint.
+    // Keep this page open in history so users can return to the install guide.
+    window.location.assign(APK_URL);
   };
 
   return (
