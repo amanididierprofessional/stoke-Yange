@@ -140,6 +140,9 @@ export async function clearLocalShopKeepAccount() {
   await db.settings.delete("seeded");
   await db.settings.put({ key: "initialized", value: "1" });
   await db.settings.put({ key: "blockCloudPull", value: "1" });
+  // Replace the cloud snapshot on the next sync that contains new local shop data.
+  // Empty local storage never deletes the cloud copy.
+  await db.settings.put({ key: "pendingCloudReplace", value: "1" });
   await db.settings.put({ key: "cloudSyncMode", value: "manual" });
 }
 
@@ -273,14 +276,24 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
     return { ok: false, reason: `profile: ${String(e)}` };
   }
 
-  if (await isPullBlocked()) {
-    const n =
-      (await db.products.count()) +
-      (await db.parties.count()) +
-      (await db.sales.count()) +
-      (await db.debts.count());
-    if (n === 0) {
-      return { ok: true, reason: "skip_empty_push_after_local_clear" };
+  const localRows =
+    (await db.products.count()) +
+    (await db.parties.count()) +
+    (await db.sales.count()) +
+    (await db.debts.count()) +
+    (await db.payments.count()) +
+    (await db.movements.count());
+
+  if (await isPullBlocked() && localRows === 0) {
+    return { ok: true, reason: "skip_empty_push_after_local_clear" };
+  }
+
+  const replaceCloud = (await db.settings.get("pendingCloudReplace"))?.value === "1";
+  if (replaceCloud && localRows > 0) {
+    // These RLS-scoped deletes replace this account's old shop snapshot only.
+    for (const table of ["sales", "debts", "payments", "movements", "parties", "products"] as const) {
+      const { error } = await client.from(table).delete().eq("user_id", userId);
+      if (error) return { ok: false, reason: "cloud_replace:" + table + ":" + error.message };
     }
   }
 
@@ -418,6 +431,10 @@ async function doPush(): Promise<{ ok: boolean; reason?: string }> {
 
   const ids = pending.map((p) => p.id!).filter(Boolean);
   if (ids.length) await db.outbox.bulkDelete(ids);
+  if (replaceCloud && localRows > 0) {
+    await db.settings.delete("pendingCloudReplace");
+    await db.settings.delete("blockCloudPull");
+  }
   return { ok: true };
 }
 
