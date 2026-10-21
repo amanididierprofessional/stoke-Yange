@@ -199,7 +199,7 @@ export async function signUp(opts: {
       error: "cloud_unavailable",
       detail:
         lastCloudMsg ||
-        "Could not create cloud account. Check internet, Supabase keys, and Confirm email = OFF.",
+        "Could not create cloud account. Check internet, Supabase keys, email confirmation delivery, and SMTP settings.",
     };
   }
 
