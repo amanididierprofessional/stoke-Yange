@@ -180,7 +180,7 @@ export async function addDebt(partyId: number, description: string, amount: numb
     description,
     amount,
     createdAt: Date.now(),
-    dueDays: dueDays != null && dueDays > 0 ? dueDays : 14,
+    ...(dueDays != null && Number.isFinite(dueDays) && dueDays > 0 ? { dueDays } : {}),
   });
   await queue("debt");
 }
