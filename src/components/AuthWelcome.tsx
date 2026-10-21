@@ -41,6 +41,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   const [otpCode, setOtpCode] = useState("");
   const [localRecoveryNeedsPassword, setLocalRecoveryNeedsPassword] = useState(false);
   const [recoverFailed, setRecoverFailed] = useState(false);
+  const [signupNeedsVerification, setSignupNeedsVerification] = useState(false);
 
   useEffect(() => {
     if (isRecoveryHash()) {
@@ -246,19 +247,24 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
           );
           return;
         }
+        if (res.error === "invalid_email") {
+          toast.error(lang === "rw" ? "Andika email nyayo." : "Enter a valid email address.");
+          return;
+        }
         if (res.error === "confirmation_required") {
           toast.error(
             res.detail
               ? String(res.detail)
               : lang === "rw"
-                ? "Zima Confirm email muri Supabase Auth → Providers → Email."
-                : "Disable Confirm email in Supabase Auth → Providers → Email.",
+                ? "Kwemeza email ntibyakunze. Reba email provider na SMTP muri Supabase."
+                : "Email verification could not be sent. Check the Supabase Email provider and SMTP settings.",
           );
           return;
         }
         toast.error(t("signupFailed"));
         return;
       }
+      setSignupNeedsVerification(res.pendingVerification === true);
       setWelcomeKind("signup");
       setWelcome(true);
     } catch (error) {
@@ -405,6 +411,15 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   const finishWelcome = () => {
+    if (welcomeKind === "signup" && signupNeedsVerification) {
+      setWelcome(false);
+      setMode("login");
+      setStep(1);
+      setPassword("");
+      setSignupNeedsVerification(false);
+      toast.message(lang === "rw" ? "Emeza email yawe mbere yo kwinjira." : "Verify your email, then sign in.");
+      return;
+    }
     if (welcomeKind === "recover") {
       setWelcome(false);
       goLogin();
@@ -436,9 +451,9 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
             <h2 className="text-lg font-bold">
               {welcome
                 ? welcomeKind === "signup"
-                  ? lang === "rw"
-                    ? "Kwiyandikisha byakunze"
-                    : "Registration successful"
+                  ? signupNeedsVerification
+                    ? lang === "rw" ? "Emeza email yawe" : "Verify your email"
+                    : lang === "rw" ? "Kwiyandikisha byakunze" : "Registration successful"
                   : welcomeKind === "recover"
                     ? lang === "rw"
                       ? "Byakunze"
@@ -467,9 +482,13 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
                       ? "Ijambo ry'ibanga ryavuguruwe. Injira ukoresheje irishya."
                       : "Password updated. Sign in with the new password."
                   : welcomeKind === "signup"
-                    ? lang === "rw"
-                      ? "Konti yawe yakozwe neza."
-                      : "Your account has been created."
+                    ? signupNeedsVerification
+                      ? lang === "rw"
+                        ? "Twakoherereje link kuri email yawe. Yifungure kugira ngo wemeze konti, hanyuma winjire."
+                        : "We sent a verification link to your email. Open it to verify your account, then sign in."
+                      : lang === "rw"
+                        ? "Konti yawe yakozwe neza."
+                        : "Your account has been created."
                     : lang === "rw"
                       ? "Wakiriye neza."
                       : "You are signed in."
@@ -491,7 +510,7 @@ export function AuthWelcome({ onAuthed }: { onAuthed?: () => void }) {
 
           {welcome && (
             <button type="button" onClick={finishWelcome} className="h-12 w-full rounded-full bg-primary font-semibold text-primary-foreground">
-              {welcomeKind === "recover" ? t("signIn") : lang === "rw" ? "Komeza" : "Continue"}
+              {welcomeKind === "recover" || signupNeedsVerification ? t("signIn") : lang === "rw" ? "Komeza" : "Continue"}
             </button>
           )}
 
