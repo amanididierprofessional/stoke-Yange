@@ -97,9 +97,12 @@ export async function signUp(opts: {
   fullName: string;
   businessName: string;
   age: string;
-}): Promise<{ ok: true } | { ok: false; error: string; detail?: string }> {
+}): Promise<{ ok: true; pendingVerification?: boolean } | { ok: false; error: string; detail?: string }> {
   const id = normalizeId(opts.loginType, opts.identifier);
   if (!id) return { ok: false, error: "identifier" };
+  if (opts.loginType === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(id)) {
+    return { ok: false, error: "invalid_email", detail: "Enter a valid email address." };
+  }
   if (opts.password.length < MIN_PASSWORD) return { ok: false, error: "password_short" };
   if (!opts.fullName.trim() || !opts.businessName.trim()) return { ok: false, error: "profile" };
 
@@ -144,7 +147,7 @@ export async function signUp(opts: {
       if (/password/i.test(msg) && /6|least|characters/i.test(msg)) {
         return { ok: false, error: "password_short", detail: msg };
       }
-      if (/email|smtp|rate|confirm/i.test(msg)) {
+      if (/error sending confirmation email|email not confirmed|confirm.*email/i.test(msg)) {
         return { ok: false, error: "confirmation_required", detail: msg };
       }
       cloudBlocked = true;
@@ -153,12 +156,10 @@ export async function signUp(opts: {
         const sign = await client.auth.signInWithPassword({ email, password: opts.password });
         if (sign.error) {
           lastCloudMsg = sign.error.message;
-          if (/email not confirmed|confirm your email/i.test(sign.error.message)) {
-            return {
-              ok: false,
-              error: "confirmation_required",
-              detail: sign.error.message,
-            };
+          if (/email not confirmed|confirm your email/i.test(sign.error.message) && opts.loginType === "email") {
+            // Supabase created the user but correctly withheld a session until email verification.
+            // Let the user verify the link, then sign in normally.
+            return { ok: true, pendingVerification: true };
           }
           cloudBlocked = true;
         }
@@ -167,9 +168,11 @@ export async function signUp(opts: {
       const uid = sess.session?.user?.id;
       if (!uid) {
         cloudBlocked = true;
-        lastCloudMsg =
-          lastCloudMsg ||
-          "No session after signup. Disable Confirm email in Supabase Auth → Providers → Email.";
+        if (opts.loginType === "email") {
+          // Email-confirmation projects may not issue a session before the link is clicked.
+          return { ok: true, pendingVerification: true };
+        }
+        lastCloudMsg = lastCloudMsg || "No session after signup.";
       }
       if (uid) {
         account.supabaseUserId = uid;
