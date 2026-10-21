@@ -134,7 +134,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         next = next.on(
           "postgres_changes",
           { event: "*", schema: "public", table, filter: "user_id=eq." + userId },
-          () => { if (!cancelled) setRemoteAhead(true); },
+          () => {
+            if (cancelled) return;
+            // Re-check instead of showing a pill for this device's own upload.
+            void checkRemoteAhead().then((result) => {
+              if (!cancelled) setRemoteAhead(result.ahead);
+            });
+          },
         );
       }
       channel = next;
