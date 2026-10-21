@@ -7,6 +7,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { db, type Party, type PartyKind } from "@/lib/db";
 import { addDebt, addParty, deleteParty, fmt, recordPayment, updateParty } from "@/lib/actions";
+import { DeadlinePicker, isoToDueDays } from "@/components/DeadlinePicker";
 import { reminderText, useI18n } from "@/lib/i18n";
 import { useShopName } from "@/components/AppShell";
 import { cn } from "@/lib/utils";
@@ -54,7 +55,6 @@ function CreditPage() {
             ? Math.min(...outstanding.map((debt) => debt.createdAt + debt.dueDays! * DAY))
             : Number.POSITIVE_INFINITY;
           const overdue = outstanding.length > 0 && deadlineAt < Date.now();
-          // If no deadline was entered, order by how long the oldest debt has been open.
           const sortAt = outstanding.length ? deadlineAt : (oldest?.createdAt ?? p.createdAt);
           return { p, debts: d, pays: py, balance, oldest: oldest?.createdAt ?? p.createdAt, sortAt, overdue };
         })
@@ -71,7 +71,6 @@ function CreditPage() {
       const phone = (r.p.phone || "").replace(/\D/g, "");
       if (name.includes(q)) return true;
       if (digits && phone.includes(digits)) return true;
-      // also match description lines for quick find
       if (r.debts.some((d) => (d.description || "").toLowerCase().includes(q))) return true;
       return false;
     });
@@ -119,7 +118,6 @@ function CreditPage() {
         ))}
       </div>
 
-      {/* Search — works for both tabs: people who owe you + people you owe */}
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -438,7 +436,7 @@ function AddDebtForm({ party, onDone }: { party: Party; onDone: () => void }) {
   const { t, lang } = useI18n();
   const [desc, setDesc] = useState("");
   const [amt, setAmt] = useState("");
-  const [due, setDue] = useState("");
+  const [deadlineIso, setDeadlineIso] = useState("");
 
   const save = async () => {
     const n = Number(amt) || 0;
@@ -446,8 +444,8 @@ function AddDebtForm({ party, onDone }: { party: Party; onDone: () => void }) {
       toast.error(t("amount"));
       return;
     }
-    const days = due.trim() ? Number(due) : undefined;
-    await addDebt(party.id!, desc.trim() || "—", n, days && days > 0 ? days : undefined);
+    const days = isoToDueDays(deadlineIso);
+    await addDebt(party.id!, desc.trim() || "—", n, days);
     toast.success(t("addDebtLbl"));
     onDone();
   };
@@ -468,13 +466,7 @@ function AddDebtForm({ party, onDone }: { party: Party; onDone: () => void }) {
           className="h-12 rounded-xl text-lg font-semibold"
         />
         <Input placeholder={t("description")} value={desc} onChange={(e) => setDesc(e.target.value)} className="h-11 rounded-xl" />
-        <Input
-          placeholder={lang === "rw" ? "Igihe (iminsi) — si ngombwa" : "Deadline (days) — optional"}
-          inputMode="numeric"
-          value={due}
-          onChange={(e) => setDue(e.target.value.replace(/\D/g, ""))}
-          className="h-11 rounded-xl"
-        />
+        <DeadlinePicker valueIso={deadlineIso} onChange={setDeadlineIso} lang={lang} />
         <button type="button" onClick={save} className="mt-2 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
           {t("save")}
         </button>
@@ -489,7 +481,7 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
   const [phone, setPhone] = useState("");
   const [desc, setDesc] = useState("");
   const [amt, setAmt] = useState("");
-  const [due, setDue] = useState("");
+  const [deadlineIso, setDeadlineIso] = useState("");
 
   const save = async () => {
     if (!name.trim()) {
@@ -498,8 +490,8 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
     }
     const id = await addParty(name, phone, kind);
     if (Number(amt) > 0) {
-      const days = due.trim() ? Number(due) : undefined;
-      await addDebt(id, desc || "—", Number(amt), days && days > 0 ? days : undefined);
+      const days = isoToDueDays(deadlineIso);
+      await addDebt(id, desc || "—", Number(amt), days);
     }
     onDone();
   };
@@ -513,13 +505,7 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
         <Input placeholder={t("name")} value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
         <Input placeholder={t("phone")} inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl" />
         <Input placeholder={t("description")} value={desc} onChange={(e) => setDesc(e.target.value)} className="h-11 rounded-xl" />
-        <Input
-          placeholder={lang === "rw" ? "Igihe (iminsi) — si ngombwa" : "Deadline (days) — optional"}
-          inputMode="numeric"
-          value={due}
-          onChange={(e) => setDue(e.target.value.replace(/\D/g, ""))}
-          className="h-11 rounded-xl"
-        />
+        <DeadlinePicker valueIso={deadlineIso} onChange={setDeadlineIso} lang={lang} />
         <Input
           placeholder={`${t("amount")} (RWF)`}
           inputMode="numeric"
