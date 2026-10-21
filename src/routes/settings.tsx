@@ -94,7 +94,7 @@ function SettingsPage() {
 
   const openReport = async () => {
     try {
-      const { html, filename } = await buildReportHtml(name || shop);
+      const { html } = await buildReportHtml(name || shop);
       setReportHtml(html);
     } catch (e) {
       toast.error(String(e));
