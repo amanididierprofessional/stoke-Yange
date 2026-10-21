@@ -49,11 +49,16 @@ function CreditPage() {
           const py = pays.filter((x) => x.partyId === p.id).sort((a, b) => b.createdAt - a.createdAt);
           const balance = d.reduce((a, x) => a + x.amount, 0) - py.reduce((a, x) => a + x.amount, 0);
           const oldest = d[0];
-          const overdue = !!oldest && balance > 0 && Date.now() - oldest.createdAt > (oldest.dueDays ?? 7) * DAY;
-          return { p, debts: d, pays: py, balance, oldest: oldest?.createdAt ?? p.createdAt, overdue };
+          const outstanding = balance > 0 ? d : [];
+          const deadlineAt = outstanding.length
+            ? Math.min(...outstanding.map((debt) => debt.createdAt + (debt.dueDays ?? 7) * DAY))
+            : Number.POSITIVE_INFINITY;
+          const overdue = !!oldest && balance > 0 && deadlineAt < Date.now();
+          const sortAt = outstanding.length ? deadlineAt : (oldest?.createdAt ?? p.createdAt);
+          return { p, debts: d, pays: py, balance, oldest: oldest?.createdAt ?? p.createdAt, sortAt, overdue };
         })
         .filter((r) => r.balance > 0 || r.debts.length === 0)
-        .sort((a, b) => a.oldest - b.oldest);
+        .sort((a, b) => a.sortAt - b.sortAt || a.oldest - b.oldest);
     }, [kind]) ?? [];
 
   const filtered = useMemo(() => {
@@ -508,17 +513,17 @@ function AddPartyForm({ kind, onDone }: { kind: PartyKind; onDone: () => void })
         <Input placeholder={t("phone")} inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl" />
         <Input placeholder={t("description")} value={desc} onChange={(e) => setDesc(e.target.value)} className="h-11 rounded-xl" />
         <Input
-          placeholder={`${t("amount")} (RWF)`}
-          inputMode="numeric"
-          value={amt}
-          onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
-          className="h-11 rounded-xl"
-        />
-        <Input
           placeholder={lang === "rw" ? "Igihe (iminsi) — si ngombwa" : "Deadline (days) — optional"}
           inputMode="numeric"
           value={due}
           onChange={(e) => setDue(e.target.value.replace(/\D/g, ""))}
+          className="h-11 rounded-xl"
+        />
+        <Input
+          placeholder={`${t("amount")} (RWF)`}
+          inputMode="numeric"
+          value={amt}
+          onChange={(e) => setAmt(e.target.value.replace(/\D/g, ""))}
           className="h-11 rounded-xl"
         />
         <button type="button" onClick={save} className="mt-2 w-full rounded-full bg-primary py-4 font-semibold text-primary-foreground">
