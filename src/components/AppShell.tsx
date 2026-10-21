@@ -121,7 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!authed || !online || !supabaseConfigured) return;
     let cancelled = false;
-    let channel: ReturnType<NonNullable<Awaited<ReturnType<typeof ensureSupabase>>>>["channel"] extends (...args: never[]) => infer R ? R : never;
+    let channel: import("@supabase/supabase-js").RealtimeChannel | null = null;
     (async () => {
       const client = await ensureSupabase();
       if (!client || cancelled) return;
@@ -137,13 +137,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           () => { if (!cancelled) setRemoteAhead(true); },
         );
       }
-      channel = next as typeof channel;
+      channel = next;
       channel.subscribe();
     })().catch((error) => console.warn("[cloud-sync] realtime subscription failed:", error));
     return () => {
       cancelled = true;
       if (channel) {
-        void ensureSupabase().then((client) => client?.removeChannel(channel as never)).catch(() => {});
+        void ensureSupabase().then((client) => channel && client?.removeChannel(channel)).catch(() => {});
       }
     };
   }, [authed, online]);
