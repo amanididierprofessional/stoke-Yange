@@ -103,11 +103,90 @@ export async function buildReportHtml(shopName: string): Promise<{ html: string;
   return { html, filename: `stoke-yange-report-${stamp}.html` };
 }
 
-/** Download report file (share/download helper). */
+function pdfEscape(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function pdfAscii(value: unknown) {
+  return String(value ?? "").normalize("NFKD").replace(/[^\x20-\x7E]/g, "?");
+}
+
+/** Build a valid PDF file locally; no print dialog or external service is required. */
+export async function buildReportPdf(shopName: string): Promise<{ blob: Blob; filename: string }> {
+  const [products, sales, parties, debts, payments] = await Promise.all([
+    db.products.orderBy("name").toArray(),
+    db.sales.orderBy("createdAt").reverse().toArray(),
+    db.parties.toArray(),
+    db.debts.toArray(),
+    db.payments.toArray(),
+  ]);
+  const live = sales.filter((s) => !s.reversed);
+  const total = (rows: typeof live, pick: (s: (typeof live)[number]) => number) => rows.reduce((n, s) => n + pick(s), 0);
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const today = live.filter((s) => s.createdAt >= start.getTime());
+  const balance = (id: number) => debts.filter((d) => d.partyId === id).reduce((n, d) => n + d.amount, 0) - payments.filter((p) => p.partyId === id).reduce((n, p) => n + p.amount, 0);
+  const lines: string[] = [
+    pdfAscii(shopName), "STOKE YANGE - SHOP REPORT", "Generated: " + new Date().toLocaleString(), "",
+    "SUMMARY",
+    "Today's cash sales: " + fmt(total(today.filter((s) => s.type === "cash"), (s) => s.total)),
+    "Today's credit sales: " + fmt(total(today.filter((s) => s.type === "credit"), (s) => s.total)),
+    "All cash sales: " + fmt(total(live.filter((s) => s.type === "cash"), (s) => s.total)),
+    "All credit sales: " + fmt(total(live.filter((s) => s.type === "credit"), (s) => s.total)),
+    "Estimated profit: " + fmt(total(live, (s) => (s.unitPrice - s.unitCost) * s.qty)),
+    "Stock value (cost): " + fmt(products.reduce((n, p) => n + p.stock * p.cost, 0)),
+    "Stock value (selling): " + fmt(products.reduce((n, p) => n + p.stock * p.price, 0)),
+    "Products: " + products.length, "", "INVENTORY", "Product | Category | Stock | Cost | Price",
+    ...products.map((p) => pdfAscii(p.name + " | " + p.category + " | " + p.stock + " " + p.unit + " | " + fmt(p.cost) + " | " + fmt(p.price))),
+    "", "SALES (latest 200)", "Date | Product | Qty | Type | Total",
+    ...live.slice(0, 200).map((s) => pdfAscii(new Date(s.createdAt).toLocaleString() + " | " + s.productName + " | " + s.qty + " | " + s.type + " | " + fmt(s.total))),
+    "", "OPEN BALANCES", "Name | Type | Balance",
+    ...parties.map((p) => ({ p, b: balance(p.id!) })).filter((x) => Math.abs(x.b) >= 1).map(({ p, b }) => pdfAscii(p.name + " | " + p.kind + " | " + fmt(b))),
+  ];
+  const wrapped = lines.flatMap((line) => {
+    const value = pdfAscii(line);
+    if (value.length <= 88) return [value];
+    const result: string[] = [];
+    for (let i = 0; i < value.length; i += 88) result.push(value.slice(i, i + 88));
+    return result;
+  });
+  const pages: string[][] = [];
+  for (let i = 0; i < wrapped.length; i += 48) pages.push(wrapped.slice(i, i + 48));
+  if (!pages.length) pages.push(["Stoke Yange report"]);
+  const objects: string[] = [];
+  const add = (value: string) => { objects.push(value); return objects.length; };
+  const catalog = add("");
+  const pagesRoot = add("");
+  const font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const pageIds: number[] = [];
+  const contentIds: number[] = [];
+  for (const page of pages) {
+    const commands = ["BT", "/F1 9 Tf", "48 794 Td", "13 TL"];
+    page.forEach((line, i) => { if (i > 0) commands.push("T*"); commands.push("(" + pdfEscape(line) + ") Tj"); });
+    commands.push("ET");
+    const stream = commands.join("\n");
+    contentIds.push(add("<< /Length " + new TextEncoder().encode(stream).length + " >>\nstream\n" + stream + "\nendstream"));
+    pageIds.push(add(""));
+  }
+  objects[catalog - 1] = "<< /Type /Catalog /Pages " + pagesRoot + " 0 R >>";
+  objects[pagesRoot - 1] = "<< /Type /Pages /Kids [" + pageIds.map((id) => id + " 0 R").join(" ") + "] /Count " + pageIds.length + " >>";
+  pageIds.forEach((id, i) => {
+    objects[id - 1] = "<< /Type /Page /Parent " + pagesRoot + " 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 " + font + " 0 R >> >> /Contents " + contentIds[i] + " 0 R >>";
+  });
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((obj, i) => { offsets.push(new TextEncoder().encode(pdf).length); pdf += (i + 1) + " 0 obj\n" + obj + "\nendobj\n"; });
+  const xref = new TextEncoder().encode(pdf).length;
+  pdf += "xref\n0 " + (objects.length + 1) + "\n0000000000 65535 f \n";
+  offsets.slice(1).forEach((offset) => { pdf += String(offset).padStart(10, "0") + " 00000 n \n"; });
+  pdf += "trailer\n<< /Size " + (objects.length + 1) + " /Root " + catalog + " 0 R >>\nstartxref\n" + xref + "\n%%EOF";
+  const stamp = new Date().toISOString().slice(0, 10);
+  return { blob: new Blob([pdf], { type: "application/pdf" }), filename: "stoke-yange-report-" + stamp + ".pdf" };
+}
+
 export async function exportPdfReport(shopName: string) {
-  const { html, filename } = await buildReportHtml(shopName);
-  downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), filename);
-  return { html, filename };
+  const report = await buildReportPdf(shopName);
+  await downloadBlob(report.blob, report.filename);
+  return report;
 }
 
 export async function exportSalesCsv() {
