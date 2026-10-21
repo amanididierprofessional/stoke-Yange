@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Bell, BookUser, History, Package, Settings, ShoppingBag, Wifi, WifiOff, Cloud, X, RefreshCw } from "lucide-react";
 import { db, ensureSeeded } from "@/lib/db";
 import { checkRemoteAhead, fullSync, trySync } from "@/lib/sync";
+import { ensureSupabase, supabaseConfigured } from "@/lib/supabase";
 import { isLoggedIn } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -112,6 +113,38 @@ export function AppShell({ children }: { children: ReactNode }) {
       cancelled = true;
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [authed, online]);
+
+  // Realtime wakes the other device immediately; the existing periodic check remains
+  // as a fallback if Realtime is unavailable or the connection briefly drops.
+  useEffect(() => {
+    if (!authed || !online || !supabaseConfigured) return;
+    let cancelled = false;
+    let channel: ReturnType<NonNullable<Awaited<ReturnType<typeof ensureSupabase>>>>["channel"] extends (...args: never[]) => infer R ? R : never;
+    (async () => {
+      const client = await ensureSupabase();
+      if (!client || cancelled) return;
+      const { data } = await client.auth.getSession();
+      const userId = data.session?.user?.id;
+      if (!userId || cancelled) return;
+      let next = client.channel("stoke-yange-live-" + userId);
+      const tables = ["products", "parties", "sales", "debts", "payments", "movements"] as const;
+      for (const table of tables) {
+        next = next.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table, filter: "user_id=eq." + userId },
+          () => { if (!cancelled) setRemoteAhead(true); },
+        );
+      }
+      channel = next as typeof channel;
+      channel.subscribe();
+    })().catch((error) => console.warn("[cloud-sync] realtime subscription failed:", error));
+    return () => {
+      cancelled = true;
+      if (channel) {
+        void ensureSupabase().then((client) => client?.removeChannel(channel as never)).catch(() => {});
+      }
     };
   }, [authed, online]);
 
@@ -299,8 +332,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <span className="min-w-0 flex-1 text-xs font-semibold text-primary">
               {lang === "rw"
-                ? "Hari amakuru mashya kuri cloud — kanda Sync"
-                : "New cloud changes — tap to sync"}
+                ? "Sync impinduka zavuye ku yindi telefone"
+                : "Sync changes from the other device"}
             </span>
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-primary-foreground">
               <RefreshCw className={cn("size-3", pillBusy && "animate-spin")} />
